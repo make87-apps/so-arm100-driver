@@ -1,0 +1,23 @@
+# Choose a base image depending on your project's language
+# For Python development, use:
+FROM ghcr.io/make87/python3-dev:latest
+#
+# For Rust development, use:
+# FROM ghcr.io/make87/rust:1-bookworm
+#
+# Other languages are not supported at the moment.
+
+# Install additional dependencies as needed
+# RUN apt-get update && apt-get install -y package-name
+
+# Add any required package repositories
+# Example: Adding Raspberry Pi repository
+# RUN curl -fsSL https://archive.raspberrypi.org/debian/raspberrypi.gpg.key | gpg --dearmor -o /usr/share/keyrings/raspberrypi-archive-keyring.gpg \
+#     && echo "deb [signed-by=/usr/share/keyrings/raspberrypi-archive-keyring.gpg] http://archive.raspberrypi.org/debian bookworm main" | tee /etc/apt/sources.list.d/raspberrypi.list \
+#     && apt-get update
+
+# Install specific libraries
+# RUN apt-get install -y library-name
+
+# Clean up to reduce image size
+RUN apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
