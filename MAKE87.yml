@@ -2,7 +2,7 @@ version: 1
 interfaces:
   - name: lerobot
     protocol: grpc
-    client:
+    clients:
       - name: robotclient
         spec:
           string: lerobot-grpc
