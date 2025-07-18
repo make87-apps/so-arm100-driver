@@ -1,20 +1,33 @@
-build_kit:
-  name: file://build_kit/Dockerfile
-  version: latest
-  target_architectures:
-  - amd64
-  - arm64
-outbound_topics: []
-inbound_topics: []
-requester_endpoints: []
-provider_endpoints:
-- name: EXAMPLE_ENDPOINT
-  requester_message_type: make87_messages.text.text_plain.PlainText
-  provider_message_type: make87_messages.text.text_plain.PlainText
-port_requirements: []
-peripheral_requirements: []
-needs_host_network: false
-needs_privileged: false
-config:
-  values: []
-volume_requirements: []
+version: 1
+interfaces:
+  - name: zenoh-client
+    protocol: zenoh
+    default_port:
+      name: zenoh-client
+      protocol: TCP
+      target_port: 7447
+      publish_mode: Ingress
+      is_system_interface: false
+      is_dev_interface: false
+    subscribers:
+      - name: TARGET_JOINT_ANGLES
+        spec:
+          string: number[]
+        encoding: json
+    publishers:
+      - name: CURRENT_JOINT_ANGLES
+        spec:
+          string: number[]
+        encoding: json
+container_config:
+  privileged: true
+config: null
+build:
+  build_kit:
+    name: python3
+dev_build:
+  build_kit:
+    name: python3
+    build_additions:
+      ide: vscode_server_py3
+      ssh: ssh_server
