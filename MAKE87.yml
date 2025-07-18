@@ -33,3 +33,6 @@ dev_build:
     build_additions:
       ide: vscode_server_py3
       ssh: ssh_server
+peripheral_requirements:
+  - peripheral_type: Camera
+    name: CAMERA
