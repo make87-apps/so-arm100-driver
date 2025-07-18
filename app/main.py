@@ -2,6 +2,9 @@ from datetime import datetime, timezone
 
 import make87
 import logging
+
+from make87.peripherals import CameraPeripheral
+
 from app.so100_autodetect import start_so100_robot_client
 
 logger = logging.getLogger(__name__)
@@ -24,13 +27,20 @@ def main():
     actions_per_chunk = make87.config.get_config_value(config, "actions_per_chunk", default=10, converter=int)
     environment_dt = make87.config.get_config_value(config, "environment_dt", default=0.1, converter=float)
 
+    manager = make87.peripherals.manager.PeripheralManager(make87_config=config)
+    camera: CameraPeripheral = manager.get_peripheral_by_name("CAMERA")
+
+
     server_address = f"{robotclient.vpn_ip}:{robotclient.vpn_port}"
     start_so100_robot_client(
         index=robot_index,
         server_address=server_address,
         fps=fps,
         actions_per_chunk=actions_per_chunk,
-        environment_dt=environment_dt
+        environment_dt=environment_dt,
+        camera_paths={
+            "front": camera.reference
+        }
     )
 
 

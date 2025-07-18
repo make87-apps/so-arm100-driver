@@ -8,7 +8,7 @@ version = "0.0.1"
 dependencies = [
   "make87==0.1.0.dev7",
   "make87_messages",
-  "lerobot",
+  "lerobot[async] @ git+https://github.com/huggingface/lerobot.git"
 ]
 description = "A small example package"
 readme = "README.md"
