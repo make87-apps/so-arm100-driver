@@ -1,11 +1,12 @@
+from pathlib import Path
 from typing import Optional, Dict
 import logging
 
+from lerobot.cameras.opencv import OpenCVCameraConfig
 from serial.tools import list_ports
-from lerobot.robots.so100_follower.configuration_so100 import SO100FollowerConfig
+from lerobot.robots.so100_follower import SO100FollowerConfig
 from lerobot.scripts.server.configs import RobotClientConfig
 from lerobot.scripts.server.robot_client import async_client
-
 
 SO100_USB_VID = 0x1A86
 KNOWN_SO100_PIDS = {0x7523, 0x55E3, 0x5523, 0x5525}
@@ -26,16 +27,15 @@ def find_so100_port(index: int = 0) -> str:
 
 
 def start_so100_robot_client(
-    server_address: str,
-    camera_paths: Dict[str, str],
-    index: int = 0,
-    task: str = "default",
-    policy_type: str = "smolvla",
-    pretrained_name_or_path: str = "lerobot/smolvla_base",
-    policy_device: str = "cpu",
-    fps: int = 10,
-    actions_per_chunk: int = 10,
-    environment_dt: float = 0.1,
+        server_address: str,
+        task: str,
+        camera_paths: Dict[str, str],
+        index: int = 0,
+        policy_type: str = "smolvla",
+        pretrained_name_or_path: str = "lerobot/smolvla_base",
+        policy_device: str = "cpu",
+        fps: int = 10,
+        actions_per_chunk: int = 10,
 ):
     """
     Auto-detect a SO-100 robot and start the gRPC client that connects to a remote policy server.
@@ -45,15 +45,13 @@ def start_so100_robot_client(
 
     config = RobotClientConfig(
         robot=SO100FollowerConfig(
-            type="so100_follower",
             port=port,
-            cameras={k: {
-                "type": "opencv",
-                "width": 1920,
-                "height": 1080,
-                "fps": 30,
-                "index_or_path": v
-            } for k, v in camera_paths.items()},
+            cameras={k: OpenCVCameraConfig(
+                width=1920,
+                height=1080,
+                fps=30,
+                index_or_path=Path(v)
+            ) for k, v in camera_paths.items()},
             id=f"so100-{index}",
         ),
         server_address=server_address,
@@ -67,7 +65,6 @@ def start_so100_robot_client(
         task=task,
         debug_visualize_queue_size=False,
         verify_robot_cameras=False,
-        environment_dt=environment_dt,
     )
 
     logging.basicConfig(level=logging.INFO)

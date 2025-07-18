@@ -6,6 +6,27 @@ interfaces:
       - name: robotclient
         spec:
           string: lerobot-grpc
+  - name: zenoh-client
+    protocol: zenoh
+    default_port:
+      name: zenoh-client
+      protocol: TCP
+      target_port: 7447
+      publish_mode: Ingress
+      is_system_interface: false
+      is_dev_interface: false
+    publishers:
+      - name: AGENT_LOGS
+        spec:
+          string: string
+        encoding: utf-8
+    providers:
+      - name: AGENT_CHAT
+        request_spec:
+          string: string
+        response_spec:
+          string: string
+        encoding: utf-8
 container_config:
   privileged: true
 config:
@@ -21,9 +42,6 @@ config:
     actions_per_chunk:
       type: integer
       default: 10
-    environment_dt:
-      type: number
-      default: 0.1
 build:
   build_kit:
     name: python3
