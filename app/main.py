@@ -34,7 +34,7 @@ def main():
 
     zenoh_interface = ZenohInterface(name="zenoh-client", make87_config=config)
     action_publisher = zenoh_interface.get_publisher(name="AGENT_LOGS")
-    agent_chat_provider = zenoh_interface.get_provider(name="AGENT_CHAT")
+    agent_chat_provider = zenoh_interface.get_queryable(name="AGENT_CHAT")
 
     server_address = f"{robotclient.vpn_ip}:{robotclient.vpn_port}"
 

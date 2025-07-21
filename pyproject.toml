@@ -6,9 +6,9 @@ build-backend = "setuptools.build_meta"
 name = "app"
 version = "0.0.1"
 dependencies = [
-  "make87[zenoh, protobuf]==0.1.0.dev7",
-  "make87_messages",
-  "lerobot[async] @ git+https://github.com/huggingface/lerobot.git"
+  "make87[zenoh]==0.1.0.dev10",
+  "lerobot[async] @ git+https://github.com/huggingface/lerobot.git",
+  "protobuf>=5.26.0"
 ]
 description = "A small example package"
 readme = "README.md"
