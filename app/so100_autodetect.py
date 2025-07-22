@@ -50,8 +50,8 @@ def start_so100_robot_client(
     camera_paths: Dict[str, str],
     index: int = 0,
     policy_type: str = "smolvla",
-    pretrained_name_or_path: str = "lerobot/smolvla_base",
-    policy_device: str = "cpu",
+    pretrained_name_or_path: str = "helper2424/smolvla_rtx_movet",
+    policy_device: str = "cuda:0",
     fps: int = 10,
     actions_per_chunk: int = 10,
 ):
@@ -63,7 +63,7 @@ def start_so100_robot_client(
         cameras={
             name: OpenCVCameraConfig(
                 index_or_path=Path(path),
-                width=1920, height=1080, fps=30
+                width=1920, height=1080, fps=fps
             )
             for name, path in camera_paths.items()
         },
@@ -89,7 +89,7 @@ def start_so100_robot_client(
 
     # 5) Instantiate and start
     client = RobotClient(cfg)
-    client.policy_config.lerobot_features = {k.replace("observation.images.front", "observation.image"): v for k, v in client.policy_config.lerobot_features.items()}
+    #  client.policy_config.lerobot_features = {k.replace("observation.images.image", "observation.image"): v for k, v in client.policy_config.lerobot_features.items()}
     if not client.start():
         raise RuntimeError("Failed to start RobotClient!")
 
