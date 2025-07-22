@@ -47,16 +47,21 @@ def main():
             time.sleep(1)
             continue
 
-        start_so100_robot_client(
-            task=text_prompt,
-            index=robot_index,
-            server_address=server_address,
-            fps=fps,
-            actions_per_chunk=actions_per_chunk,
-            camera_paths={
-                "front": camera.reference
-            }
-        )
+        try:
+            start_so100_robot_client(
+                task=text_prompt,
+                index=robot_index,
+                server_address=server_address,
+                fps=fps,
+                actions_per_chunk=actions_per_chunk,
+                camera_paths={
+                    "front": camera.reference
+                }
+            )
+        except Exception as e:
+            logger.error(f"Error running command: {e}")
+            time.sleep(1)
+            continue
 
 
 if __name__ == "__main__":
