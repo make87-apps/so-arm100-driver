@@ -6,10 +6,11 @@ build-backend = "setuptools.build_meta"
 name = "app"
 version = "0.0.1"
 dependencies = [
-  "make87[zenoh]==0.1.0.dev10",
+  "make87[zenoh,protobuf]==0.1.0",
+  "make87-messages-pb5",
   "lerobot[async] @ git+https://github.com/huggingface/lerobot.git",
   "protobuf>=5.26.0",
-  "feetech-servo-sdk==1.0.0"
+  "feetech-servo-sdk==1.0.0",
 ]
 description = "A small example package"
 readme = "README.md"

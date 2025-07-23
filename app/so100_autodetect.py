@@ -1,24 +1,12 @@
 from pathlib import Path
-from typing import Optional, Dict
-import logging
+from typing import Dict
 
 from lerobot.cameras.opencv import OpenCVCameraConfig
-from serial.tools import list_ports
 from lerobot.robots.so100_follower import SO100FollowerConfig
 from lerobot.scripts.server.configs import RobotClientConfig
-from lerobot.scripts.server.robot_client import async_client
+from serial.tools import list_ports
 
-
-import threading
-from pprint import pformat
-from dataclasses import asdict
-
-from lerobot.scripts.server.robot_client import RobotClient
-from lerobot.datasets.utils import hw_to_dataset_features
-
-
-
-SO100_USB_VID = 6790      
+SO100_USB_VID = 6790
 KNOWN_SO100_PIDS = {
     29987,
     21987,
@@ -44,17 +32,17 @@ def find_so100_port(index: int = 0) -> str:
     return matching_ports[index]
 
 
-def start_so100_robot_client(
+def get_so100_config(
     server_address: str,
-    task: str,
     camera_paths: Dict[str, str],
+    task: str = "",
     index: int = 0,
     policy_type: str = "smolvla",
     pretrained_name_or_path: str = "helper2424/smolvla_rtx_movet",
     policy_device: str = "cuda:0",
     fps: int = 10,
     actions_per_chunk: int = 10,
-):
+) -> RobotClientConfig:
     # 1) Build the robot & camera config
     port = find_so100_port(index=index)
     robot_cfg = SO100FollowerConfig(
@@ -79,30 +67,7 @@ def start_so100_robot_client(
         policy_device=policy_device,
         fps=fps,
         actions_per_chunk=actions_per_chunk,
-        #lerobot_features=lerobot_features,  # <— inject the patched features
         debug_visualize_queue_size=False,
         verify_robot_cameras=False,
     )
-
-    logging.basicConfig(level=logging.INFO)
-    logging.info("Starting RobotClient with config:\n%s", pformat(asdict(cfg)))
-
-    # 5) Instantiate and start
-    client = RobotClient(cfg)
-    #  client.policy_config.lerobot_features = {k.replace("observation.images.image", "observation.image"): v for k, v in client.policy_config.lerobot_features.items()}
-    if not client.start():
-        raise RuntimeError("Failed to start RobotClient!")
-
-    # 6) Start thread to receive actions
-    recv_thread = threading.Thread(target=client.receive_actions, daemon=True)
-    recv_thread.start()
-
-    try:
-        # 7) Main control loop blocks here
-        client.control_loop(task)
-    finally:
-        client.stop()
-        recv_thread.join()
-        if cfg.debug_visualize_queue_size:
-            client.visualize_action_queue_size()
-        logging.info("Robot client stopped.")
+    return cfg

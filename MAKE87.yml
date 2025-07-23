@@ -1,5 +1,11 @@
 version: 1
 interfaces:
+  - name: rerun
+    protocol: grpc
+    clients:
+      - name: rerun-grpc-client
+        spec:
+          string: rerun-grpc
   - name: lerobot
     protocol: grpc
     clients:
@@ -20,6 +26,10 @@ interfaces:
         spec:
           string: string
         encoding: utf-8
+      - name: CAMERA_IMAGE
+        spec:
+          make87_message: make87_messages.image.compressed.image_jpeg.ImageJPEG
+        encoding: proto
     providers:
       - name: AGENT_CHAT
         request_spec:
@@ -42,6 +52,10 @@ config:
     actions_per_chunk:
       type: integer
       default: 10
+    pretrained_name_or_path:
+      type: string
+      default: "helper2424/smolvla_rtx_movet"
+      description: The name or path of the pretrained model to use.
 build:
   build_kit:
     name: python3

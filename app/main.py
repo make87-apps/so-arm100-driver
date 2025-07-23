@@ -4,12 +4,15 @@ from datetime import datetime, timezone
 import make87
 import logging
 
+from lerobot.scripts.server.helpers import Observation
 from make87.interfaces.zenoh import ZenohInterface
 from make87.peripherals import CameraPeripheral
 
-from app.so100_autodetect import start_so100_robot_client
+from app.robot_client import CustomRobotClient
+from app.so100_autodetect import get_so100_config
 
 logger = logging.getLogger(__name__)
+
 
 def main():
     config = make87.config.load_config_from_env()
@@ -23,45 +26,54 @@ def main():
         logger.warning("No robotclient client found in configuration.")
         return
 
-    
     robot_index = make87.config.get_config_value(config, "robot_index", default=0, converter=int)
     fps = make87.config.get_config_value(config, "fps", default=10, converter=int)
     actions_per_chunk = make87.config.get_config_value(config, "actions_per_chunk", default=10, converter=int)
+    pretrained_name_or_path = make87.config.get_config_value(config, "pretrained_name_or_path",
+                                                             default="helper2424/smolvla_rtx_movet")
 
     manager = make87.peripherals.manager.PeripheralManager(make87_config=config)
     camera: CameraPeripheral = manager.get_peripheral_by_name("CAMERA")
 
-
     zenoh_interface = ZenohInterface(name="zenoh-client", make87_config=config)
     action_publisher = zenoh_interface.get_publisher(name="AGENT_LOGS")
+    camera_publisher = zenoh_interface.get_publisher(name="CAMERA_IMAGE")
     agent_chat_provider = zenoh_interface.get_queryable(name="AGENT_CHAT")
 
     server_address = f"{robotclient.vpn_ip}:{robotclient.vpn_port}"
 
-    while True:
+    def on_observation_callback(observation: Observation):
+        pass
+
+    def on_action_callback(action):
+        pass
+
+    def get_next_task():
+        """Retrieve the next task from the agent chat provider."""
         try:
             prompt = agent_chat_provider.recv()
-            text_prompt = prompt.payload.to_bytes().decode("utf-8")
+            return prompt.payload.to_bytes().decode("utf-8")
         except Exception as e:
-            logger.error(f"Error receiving prompt: {e}")
-            time.sleep(1)
-            continue
+            logger.error(f"Error receiving task: {e}")
+            return ""
 
-        try:
-            start_so100_robot_client(
-                task=text_prompt,
-                index=robot_index,
-                server_address=server_address,
-                fps=fps,
-                actions_per_chunk=actions_per_chunk,
-                camera_paths={
-                    "front": camera.reference
-                }
-            )
-        except Exception as e:
-            logger.error(f"Error running command: {e}")
-            time.sleep(1)
-            continue
+    robot_config = get_so100_config(
+        server_address=server_address,
+        fps=fps,
+        actions_per_chunk=actions_per_chunk,
+        pretrained_name_or_path=pretrained_name_or_path,
+        index=robot_index,
+        camera_paths={
+            "front": camera.reference
+        },
+    )
+
+    CustomRobotClient.run_robot_client(
+        get_next_task=get_next_task,
+        robot_config=robot_config,
+        on_action_callback=on_action_callback,
+        on_observation_callback=on_observation_callback,
+    )
 
 
 if __name__ == "__main__":
