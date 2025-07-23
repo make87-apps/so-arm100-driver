@@ -21,6 +21,12 @@ from lerobot.scripts.server.helpers import (
     Observation,
 )
 from lerobot.scripts.server.robot_client import RobotClient
+import pickle
+from lerobot.transport import (
+    async_inference_pb2,  # type: ignore
+    async_inference_pb2_grpc,  # type: ignore
+)
+import grpc
 
 
 class CustomRobotClient(RobotClient):
@@ -35,6 +41,92 @@ class CustomRobotClient(RobotClient):
         self.pause = threading.Event()
         self.current_task = config.task
 
+    def receive_actions(self, verbose: bool = False):
+        """Receive actions from the policy server"""
+        # Wait at barrier for synchronized start
+        self.start_barrier.wait()
+        self.logger.info("Action receiving thread starting")
+
+        while self.running:
+            try:
+                if not self.pause.is_set():
+                    self.logger.info("Control loop paused, waiting for resume...")
+                    self.pause.wait()
+
+                # Use StreamActions to get a stream of actions from the server
+                actions_chunk = self.stub.GetActions(async_inference_pb2.Empty())
+                if len(actions_chunk.data) == 0:
+                    continue  # received `Empty` from server, wait for next call
+
+                receive_time = time.time()
+
+                # Deserialize bytes back into list[TimedAction]
+                deserialize_start = time.perf_counter()
+                timed_actions = pickle.loads(actions_chunk.data)  # nosec
+                deserialize_time = time.perf_counter() - deserialize_start
+
+                self.action_chunk_size = max(self.action_chunk_size, len(timed_actions))
+
+                # Calculate network latency if we have matching observations
+                if len(timed_actions) > 0 and verbose:
+                    with self.latest_action_lock:
+                        latest_action = self.latest_action
+
+                    self.logger.debug(f"Current latest action: {latest_action}")
+
+                    # Get queue state before changes
+                    old_size, old_timesteps = self._inspect_action_queue()
+                    if not old_timesteps:
+                        old_timesteps = [latest_action]  # queue was empty
+
+                    # Get queue state before changes
+                    old_size, old_timesteps = self._inspect_action_queue()
+                    if not old_timesteps:
+                        old_timesteps = [latest_action]  # queue was empty
+
+                    # Log incoming actions
+                    incoming_timesteps = [a.get_timestep() for a in timed_actions]
+
+                    first_action_timestep = timed_actions[0].get_timestep()
+                    server_to_client_latency = (receive_time - timed_actions[0].get_timestamp()) * 1000
+
+                    self.logger.info(
+                        f"Received action chunk for step #{first_action_timestep} | "
+                        f"Latest action: #{latest_action} | "
+                        f"Incoming actions: {incoming_timesteps[0]}:{incoming_timesteps[-1]} | "
+                        f"Network latency (server->client): {server_to_client_latency:.2f}ms | "
+                        f"Deserialization time: {deserialize_time * 1000:.2f}ms"
+                    )
+
+                # Update action queue
+                start_time = time.perf_counter()
+                self._aggregate_action_queues(timed_actions, self.config.aggregate_fn)
+                queue_update_time = time.perf_counter() - start_time
+
+                self.must_go.set()  # after receiving actions, next empty queue triggers must-go processing!
+
+                if verbose:
+                    # Get queue state after changes
+                    new_size, new_timesteps = self._inspect_action_queue()
+
+                    with self.latest_action_lock:
+                        latest_action = self.latest_action
+
+                    self.logger.info(
+                        f"Latest action: {latest_action} | "
+                        f"Old action steps: {old_timesteps[0]}:{old_timesteps[-1]} | "
+                        f"Incoming action steps: {incoming_timesteps[0]}:{incoming_timesteps[-1]} | "
+                        f"Updated action steps: {new_timesteps[0]}:{new_timesteps[-1]}"
+                    )
+                    self.logger.debug(
+                        f"Queue update complete ({queue_update_time:.6f}s) | "
+                        f"Before: {old_size} items | "
+                        f"After: {new_size} items | "
+                    )
+
+            except grpc.RpcError as e:
+                self.logger.error(f"Error receiving actions: {e}")
+
     def custom_control_loop(self, verbose: bool = False) -> tuple[Observation, Action]:
         """Combined function for executing actions and streaming observations"""
         # Wait at barrier for synchronized start
@@ -45,7 +137,7 @@ class CustomRobotClient(RobotClient):
         _captured_observation = None
 
         while self.running:
-            if self.pause.is_set():
+            if not self.pause.is_set():
                 self.logger.info("Control loop paused, waiting for resume...")
                 self.pause.wait()
 
@@ -68,12 +160,12 @@ class CustomRobotClient(RobotClient):
 
     def pause_control_loop(self):
         """Pause the control loop"""
-        self.pause.set()
+        self.pause.clear()
         self.logger.info("Control loop paused")
 
     def continue_control_loop(self):
         """Resume the control loop"""
-        self.pause.clear()
+        self.pause.set()
         self.logger.info("Control loop resumed")
 
     @staticmethod
@@ -93,11 +185,11 @@ class CustomRobotClient(RobotClient):
             on_observation_callback=on_observation_callback,
             on_action_callback=on_action_callback,
         )
+        client.pause_control_loop()
         #  client.policy_config.lerobot_features = {k.replace("observation.images.image", "observation.image"): v for k, v in client.policy_config.lerobot_features.items()}
         if not client.start():
             raise RuntimeError("Failed to start RobotClient!")
 
-        client.pause_control_loop()
 
         # 6) Start thread to receive actions
         recv_thread = threading.Thread(target=client.receive_actions, daemon=True)

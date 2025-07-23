@@ -7,9 +7,12 @@ import logging
 from lerobot.scripts.server.helpers import Observation
 from make87.interfaces.zenoh import ZenohInterface
 from make87.peripherals import CameraPeripheral
+from make87_messages.image.compressed.image_jpeg_pb2 import ImageJPEG
+import make87 as m87
 
 from app.robot_client import CustomRobotClient
 from app.so100_autodetect import get_so100_config
+import cv2
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +30,7 @@ def main():
         return
 
     robot_index = make87.config.get_config_value(config, "robot_index", default=0, converter=int)
-    fps = make87.config.get_config_value(config, "fps", default=10, converter=int)
+    fps = make87.config.get_config_value(config, "fps", default=30, converter=int)
     actions_per_chunk = make87.config.get_config_value(config, "actions_per_chunk", default=10, converter=int)
     pretrained_name_or_path = make87.config.get_config_value(config, "pretrained_name_or_path",
                                                              default="helper2424/smolvla_rtx_movet")
@@ -42,8 +45,20 @@ def main():
 
     server_address = f"{robotclient.vpn_ip}:{robotclient.vpn_port}"
 
+    cam_name = "front"
+
     def on_observation_callback(observation: Observation):
-        pass
+        if not observation:
+            return
+        frame = observation["front"]
+        try:
+            ret, jpeg = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+            msg = ImageJPEG(data=jpeg.tobytes())
+            message_encoded = m87.encodings.ProtobufEncoder(message_type=ImageJPEG).encode(msg)
+            camera_publisher.put(message_encoded)
+        except Exception as e:
+            logger.error(f"Error sending image: {e}")
+            return
 
     def on_action_callback(action):
         pass
@@ -61,10 +76,10 @@ def main():
         server_address=server_address,
         fps=fps,
         actions_per_chunk=actions_per_chunk,
-        pretrained_name_or_path=pretrained_name_or_path,
+        pretrained_name_or_path="helper2424/smolvla_check_async",
         index=robot_index,
         camera_paths={
-            "front": camera.reference
+            cam_name: camera.reference
         },
     )
 

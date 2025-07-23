@@ -39,8 +39,8 @@ def get_so100_config(
     index: int = 0,
     policy_type: str = "smolvla",
     pretrained_name_or_path: str = "helper2424/smolvla_rtx_movet",
-    policy_device: str = "cuda:0",
-    fps: int = 10,
+    policy_device: str = "cpu",
+    fps: int = 30,
     actions_per_chunk: int = 10,
 ) -> RobotClientConfig:
     # 1) Build the robot & camera config
