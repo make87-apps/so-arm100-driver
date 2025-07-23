@@ -45,14 +45,14 @@ def main():
 
     server_address = f"{robotclient.vpn_ip}:{robotclient.vpn_port}"
 
-    cam_name = "front"
+    cam_name = "side"
 
     def on_observation_callback(observation: Observation):
         if not observation:
             return
-        frame = observation["front"]
+        frame = observation["side"]
         try:
-            ret, jpeg = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+            ret, jpeg = cv2.imencode(".jpg", frame[...,::-1], [cv2.IMWRITE_JPEG_QUALITY, 80])
             msg = ImageJPEG(data=jpeg.tobytes())
             message_encoded = m87.encodings.ProtobufEncoder(message_type=ImageJPEG).encode(msg)
             camera_publisher.put(message_encoded)
@@ -76,7 +76,7 @@ def main():
         server_address=server_address,
         fps=fps,
         actions_per_chunk=actions_per_chunk,
-        pretrained_name_or_path="helper2424/smolvla_check_async",
+        pretrained_name_or_path="TensorTemplar/smolvla-singlecam2",
         index=robot_index,
         camera_paths={
             cam_name: camera.reference
