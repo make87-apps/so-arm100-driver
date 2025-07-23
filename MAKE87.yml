@@ -26,7 +26,11 @@ interfaces:
         spec:
           string: string
         encoding: utf-8
-      - name: CAMERA_IMAGE
+      - name: CAMERA_1_IMAGE
+        spec:
+          make87_message: make87_messages.image.compressed.image_jpeg.ImageJPEG
+        encoding: proto
+      - name: CAMERA_2_IMAGE
         spec:
           make87_message: make87_messages.image.compressed.image_jpeg.ImageJPEG
         encoding: proto
@@ -56,6 +60,14 @@ config:
       type: string
       default: "helper2424/smolvla_rtx_movet"
       description: The name or path of the pretrained model to use.
+    camera_1_name:
+      type: string
+      default: "front"
+      description: The name of the first camera to use.
+    camera_2_name:
+      type: string
+      default: "wrist"
+      description: The name of the second camera to use.
 build:
   build_kit:
     name: python3
@@ -67,4 +79,6 @@ dev_build:
       ssh: ssh_server
 peripheral_requirements:
   - peripheral_type: Camera
-    name: CAMERA
+    name: CAMERA_1
+  - peripheral_type: Camera
+    name: CAMERA_2
