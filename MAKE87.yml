@@ -6,41 +6,6 @@ interfaces:
       - name: rerun-grpc-client
         spec:
           string: rerun-grpc
-  - name: lerobot
-    protocol: grpc
-    clients:
-      - name: robotclient
-        spec:
-          string: lerobot-grpc
-  - name: zenoh-client
-    protocol: zenoh
-    default_port:
-      name: zenoh-client
-      protocol: TCP
-      target_port: 7447
-      publish_mode: Ingress
-      is_system_interface: false
-      is_dev_interface: false
-    publishers:
-      - name: AGENT_LOGS
-        spec:
-          string: string
-        encoding: utf-8
-      - name: CAMERA_1_IMAGE
-        spec:
-          make87_message: make87_messages.image.compressed.image_jpeg.ImageJPEG
-        encoding: proto
-      - name: CAMERA_2_IMAGE
-        spec:
-          make87_message: make87_messages.image.compressed.image_jpeg.ImageJPEG
-        encoding: proto
-    providers:
-      - name: AGENT_CHAT
-        request_spec:
-          string: string
-        response_spec:
-          string: string
-        encoding: utf-8
 container_config:
   privileged: true
 config:
@@ -50,21 +15,118 @@ config:
       type: integer
       default: 0
       description: if there are multiple so100 arms connected this is the index of the one to use
-    actions_per_chunk:
-      type: integer
-      default: 10
-    pretrained_name_or_path:
-      type: string
-      default: "helper2424/smolvla_rtx_movet"
-      description: The name or path of the pretrained model to use.
-    camera_1_name:
-      type: string
-      default: "front"
-      description: The name of the first camera to use.
-    camera_2_name:
-      type: string
-      default: "wrist"
-      description: The name of the second camera to use.
+    calibration:
+      type: object
+      properties:
+        shoulder_pan:
+          type: object
+          properties:
+            id:
+              type: integer
+              default: 1
+            drive_mode:
+              type: integer
+              default: 0
+            homing_offset:
+              type: integer
+              default: -1663
+            range_min:
+              type: integer
+              default: 757
+            range_max:
+              type: integer
+              default: 3040
+        shoulder_lift:
+          type: object
+          properties:
+            id:
+              type: integer
+              default: 2
+            drive_mode:
+              type: integer
+              default: 0
+            homing_offset:
+              type: integer
+              default: -1259
+            range_min:
+              type: integer
+              default: 908
+            range_max:
+              type: integer
+              default: 3214
+        elbow_flex:
+          type: object
+          properties:
+            id:
+              type: integer
+              default: 3
+            drive_mode:
+              type: integer
+              default: 0
+            homing_offset:
+              type: integer
+              default: -1613
+            range_min:
+              type: integer
+              default: 807
+            range_max:
+              type: integer
+              default: 3100
+        wrist_flex:
+          type: object
+          properties:
+            id:
+              type: integer
+              default: 4
+            drive_mode:
+              type: integer
+              default: 0
+            homing_offset:
+              type: integer
+              default: 1570
+            range_min:
+              type: integer
+              default: 755
+            range_max:
+              type: integer
+              default: 3071
+        wrist_roll:
+          type: object
+          properties:
+            id:
+              type: integer
+              default: 5
+            drive_mode:
+              type: integer
+              default: 0
+            homing_offset:
+              type: integer
+              default: -1372
+            range_min:
+              type: integer
+              default: 0
+            range_max:
+              type: integer
+              default: 4095
+        gripper:
+          type: object
+          properties:
+            id:
+              type: integer
+              default: 6
+            drive_mode:
+              type: integer
+              default: 0
+            homing_offset:
+              type: integer
+              default: 1156
+            range_min:
+              type: integer
+              default: 1797
+            range_max:
+              type: integer
+              default: 3228
+
 build:
   build_kit:
     name: python3
@@ -77,5 +139,81 @@ dev_build:
 peripheral_requirements:
   - peripheral_type: Camera
     name: CAMERA_1
-  - peripheral_type: Camera
-    name: CAMERA_2
+
+variants:
+  mcp_control:
+    build:
+      custom:
+        dockerfile: build_kit/Dockerfile
+    interfaces:
+      - name: mcp-server
+        protocol: mcp
+        servers:
+          - name: mcp-server
+            spec:
+              string: mcp/http
+            port:
+              name: mcp-server
+              protocol: TCP
+              target_port: 9988
+
+  policy_control:
+    peripheral_requirements:
+      - peripheral_type: Camera
+        name: CAMERA_2
+    config:
+      actions_per_chunk:
+        type: integer
+        default: 10
+      pretrained_name_or_path:
+        type: string
+        default: "helper2424/smolvla_rtx_movet"
+        description: The name or path of the pretrained model to use.
+      policy_type:
+        type: string
+        default: "smolvla"
+        description: The type of policy to use, e.g., "smolvla" or "smolvla_rtx".
+      camera_1_name:
+        type: string
+        default: "front"
+        description: The name of the first camera to use.
+      camera_2_name:
+        type: string
+        default: "wrist"
+        description: The name of the second camera to use.
+    interfaces:
+      - name: lerobot
+        protocol: grpc
+        clients:
+          - name: robotclient
+            spec:
+              string: lerobot-grpc
+      - name: zenoh-client
+        protocol: zenoh
+        default_port:
+          name: zenoh-client
+          protocol: TCP
+          target_port: 7447
+          publish_mode: Ingress
+          is_system_interface: false
+          is_dev_interface: false
+        publishers:
+          - name: AGENT_LOGS
+            spec:
+              string: string
+            encoding: utf-8
+          - name: CAMERA_1_IMAGE
+            spec:
+              make87_message: make87_messages.image.compressed.image_jpeg.ImageJPEG
+            encoding: proto
+          - name: CAMERA_2_IMAGE
+            spec:
+              make87_message: make87_messages.image.compressed.image_jpeg.ImageJPEG
+            encoding: proto
+        providers:
+          - name: AGENT_CHAT
+            request_spec:
+              string: string
+            response_spec:
+              string: string
+            encoding: utf-8

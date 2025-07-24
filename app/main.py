@@ -1,23 +1,20 @@
-import time
-from datetime import datetime, timezone
+import logging
+import os
 
 import make87
-import logging
-
-from lerobot.scripts.server.helpers import Observation
-from make87.interfaces.zenoh import ZenohInterface
-from make87.peripherals import CameraPeripheral
-from make87_messages.image.compressed.image_jpeg_pb2 import ImageJPEG
 import make87 as m87
-
-from app.robot_client import CustomRobotClient
-from app.so100_autodetect import get_so100_config
-import cv2
+from make87.peripherals import CameraPeripheral
 
 logger = logging.getLogger(__name__)
 
 
-def main():
+def run_policy_controlled():
+    from make87_messages.image.compressed.image_jpeg_pb2 import ImageJPEG
+    from lerobot.scripts.server.helpers import Observation
+    from make87.interfaces.zenoh import ZenohInterface
+    from app.robot_client import CustomRobotClient, get_so100_policy_config
+    import cv2
+
     config = make87.config.load_config_from_env()
     lerobot_interface = config.interfaces.get("lerobot")
     if not lerobot_interface:
@@ -35,6 +32,7 @@ def main():
                                                              default="helper2424/act_purple_platform")
     camera_1_name = make87.config.get_config_value(config, "camera_1_name", default="front")
     camera_2_name = make87.config.get_config_value(config, "camera_2_name", default="wrist")
+    calibration = make87.config.get_config_value(config, "calibration")
 
     manager = make87.peripherals.manager.PeripheralManager(make87_config=config)
     try:
@@ -54,8 +52,6 @@ def main():
     agent_chat_provider = zenoh_interface.get_queryable(name="AGENT_CHAT")
 
     server_address = f"{robotclient.vpn_ip}:{robotclient.vpn_port}"
-    camera_1_name = "wrist"
-    camera_2_name = "above"
 
     def on_observation_callback(observation: Observation):
         if not observation:
@@ -63,7 +59,7 @@ def main():
         if camera_1_name in observation:
             frame = observation[camera_1_name]
             try:
-                ret, jpeg = cv2.imencode(".jpg", frame[...,::-1], [cv2.IMWRITE_JPEG_QUALITY, 95])
+                ret, jpeg = cv2.imencode(".jpg", frame[..., ::-1], [cv2.IMWRITE_JPEG_QUALITY, 95])
                 msg = ImageJPEG(data=jpeg.tobytes())
                 message_encoded = m87.encodings.ProtobufEncoder(message_type=ImageJPEG).encode(msg)
                 camera_1_publisher.put(message_encoded)
@@ -73,7 +69,7 @@ def main():
         if camera_2_name in observation:
             frame = observation[camera_2_name]
             try:
-                ret, jpeg = cv2.imencode(".jpg", frame[...,::-1], [cv2.IMWRITE_JPEG_QUALITY, 95])
+                ret, jpeg = cv2.imencode(".jpg", frame[..., ::-1], [cv2.IMWRITE_JPEG_QUALITY, 95])
                 msg = ImageJPEG(data=jpeg.tobytes())
                 message_encoded = m87.encodings.ProtobufEncoder(message_type=ImageJPEG).encode(msg)
                 camera_2_publisher.put(message_encoded)
@@ -98,7 +94,7 @@ def main():
         camera_paths[camera_1_name] = camera_1.reference
     if camera_2:
         camera_paths[camera_2_name] = camera_2.reference
-    robot_config = get_so100_config(
+    robot_config = get_so100_policy_config(
         server_address=server_address,
         actions_per_chunk=actions_per_chunk,
         policy_type="act",
@@ -112,8 +108,27 @@ def main():
         robot_config=robot_config,
         on_action_callback=on_action_callback,
         on_observation_callback=on_observation_callback,
+        calibration=calibration,
     )
 
 
+def run_teleop():
+    from app.teleop import teleoperate
+    config = make87.config.load_config_from_env()
+
+    robot_index = make87.config.get_config_value(config, "robot_index", default=0, converter=int)
+    calibration = make87.config.get_config_value(config, "calibration")
+
+    manager = make87.peripherals.manager.PeripheralManager(make87_config=config)
+    camera_1: CameraPeripheral = manager.get_peripheral_by_name("CAMERA_1")
+
+    teleoperate(camera_paths={"gripper": camera_1.reference},
+                index=robot_index,
+                calibration=calibration)
+
+
 if __name__ == "__main__":
-    main()
+    if os.environ.get("TELEOP", None) is None:
+        run_policy_controlled()
+    else:
+        run_teleop()

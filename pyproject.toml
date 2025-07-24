@@ -6,8 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "app"
 version = "0.0.1"
 dependencies = [
-  "make87[zenoh,protobuf]==0.1.0",
-  "make87-messages-pb5",
+  "make87==0.1.0",
   "lerobot[async,feetech] @ git+https://github.com/huggingface/lerobot.git",
   "protobuf>=5.26.0",
 ]
@@ -20,3 +19,8 @@ packages = ["app"]
 
 [tool.setuptools.package-data]
 app = []
+
+
+[project.optional-dependencies]
+mcp_control = ["mcp"]
+policy_control = ["make87[zenoh,protobuf]==0.1.0", "make87-messages-pb5"]
