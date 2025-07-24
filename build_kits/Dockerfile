@@ -30,7 +30,7 @@ RUN set -eux; \
     fi; \
     ${VIRTUAL_ENV}/bin/python3 -m pip install --no-deps lerobot  \
     && ${VIRTUAL_ENV}/bin/python3 -m pip install --no-deps .[mcp_control] \
-    && ${VIRTUAL_ENV}/bin/python3 -m pip install pyserial numpy packaging opencv-python-headless mcp
+    && ${VIRTUAL_ENV}/bin/python3 -m pip install pyserial numpy packaging opencv-python-headless mcp make87
 
 FROM ghcr.io/make87/python3-debian12:latest
 
