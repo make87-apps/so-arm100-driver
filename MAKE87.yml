@@ -144,7 +144,7 @@ variants:
   mcp_control:
     build:
       custom:
-        dockerfile: build_kit/Dockerfile
+        dockerfile: build_kits/Dockerfile
     interfaces:
       - name: mcp-server
         protocol: mcp
