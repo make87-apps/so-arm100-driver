@@ -30,10 +30,9 @@ def main():
         return
 
     robot_index = make87.config.get_config_value(config, "robot_index", default=0, converter=int)
-    fps = make87.config.get_config_value(config, "fps", default=30, converter=int)
     actions_per_chunk = make87.config.get_config_value(config, "actions_per_chunk", default=10, converter=int)
     pretrained_name_or_path = make87.config.get_config_value(config, "pretrained_name_or_path",
-                                                             default="helper2424/smolvla_rtx_movet")
+                                                             default="helper2424/act_purple_platform")
     camera_1_name = make87.config.get_config_value(config, "camera_1_name", default="front")
     camera_2_name = make87.config.get_config_value(config, "camera_2_name", default="wrist")
 
@@ -55,7 +54,8 @@ def main():
     agent_chat_provider = zenoh_interface.get_queryable(name="AGENT_CHAT")
 
     server_address = f"{robotclient.vpn_ip}:{robotclient.vpn_port}"
-
+    camera_1_name = "wrist"
+    camera_2_name = "above"
 
     def on_observation_callback(observation: Observation):
         if not observation:
@@ -98,11 +98,10 @@ def main():
         camera_paths[camera_1_name] = camera_1.reference
     if camera_2:
         camera_paths[camera_2_name] = camera_2.reference
-
     robot_config = get_so100_config(
         server_address=server_address,
-        fps=fps,
         actions_per_chunk=actions_per_chunk,
+        policy_type="act",
         pretrained_name_or_path=pretrained_name_or_path,
         index=robot_index,
         camera_paths=camera_paths,

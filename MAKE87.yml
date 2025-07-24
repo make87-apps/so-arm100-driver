@@ -50,9 +50,6 @@ config:
       type: integer
       default: 0
       description: if there are multiple so100 arms connected this is the index of the one to use
-    fps:
-      type: integer
-      default: 10
     actions_per_chunk:
       type: integer
       default: 10
