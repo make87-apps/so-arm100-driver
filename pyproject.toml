@@ -17,10 +17,6 @@ requires-python = ">=3.9,<3.13"
 [tool.setuptools]
 packages = ["app"]
 
-[tool.setuptools.package-data]
-app = []
-
-
 [project.optional-dependencies]
 mcp_control = ["mcp"]
 policy_control = ["make87[zenoh,protobuf]==0.1.0", "make87-messages-pb5"]

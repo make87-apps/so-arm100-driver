@@ -28,9 +28,8 @@ RUN set -eux; \
     else \
       echo "No pip.conf found, using default indexes"; \
     fi; \
-    ${VIRTUAL_ENV}/bin/python3 -m pip install --no-deps lerobot  \
-    && ${VIRTUAL_ENV}/bin/python3 -m pip install --no-deps .[mcp_control] \
-    && ${VIRTUAL_ENV}/bin/python3 -m pip install pyserial numpy packaging opencv-python-headless mcp make87
+    ${VIRTUAL_ENV}/bin/python3 -m pip install ".[mcp_control]" \
+    && ${VIRTUAL_ENV}/bin/python3 -m pip uninstall torch torchvision torchaudio torchcodec diffusers nvidia-cusparse-cu12 nvidia-cufft-cu12 nvidia-cudnn-cu12 nvidia-cusolver-cu12 -y
 
 FROM ghcr.io/make87/python3-debian12:latest
 
