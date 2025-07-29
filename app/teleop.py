@@ -227,8 +227,8 @@ def teleoperate(camera_paths: Dict[str, str],
         with calibration_file.open("w") as f:
             json.dump(calibration, f, indent=4)
 
-    teleop = MCPEndEffectorTeleop(config=MCPTeleopConfig())
     robot = SO100FollowerEndEffector(config=robot_cfg)
+    teleop = MCPEndEffectorTeleop(config=MCPTeleopConfig(), robot=robot)
 
     teleop.connect()
     robot.connect()

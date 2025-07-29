@@ -14,7 +14,7 @@ KNOWN_SO100_PIDS = {
 }
 
 
-def get_camera_info(index_or_path: Union[int, str, Path]) -> Tuple[int, int, float]:
+def get_camera_info(index_or_path: Union[int, str, Path]) -> Tuple[int, int, int]:
     cap = cv2.VideoCapture(str(index_or_path))
     if not cap.isOpened():
         raise RuntimeError(f"Failed to open camera at {index_or_path}")
@@ -27,7 +27,7 @@ def get_camera_info(index_or_path: Union[int, str, Path]) -> Tuple[int, int, flo
 
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    fps = float(cap.get(cv2.CAP_PROP_FPS))
+    fps = int(cap.get(cv2.CAP_PROP_FPS))
 
     cap.release()
     return width, height, fps
