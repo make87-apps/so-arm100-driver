@@ -23,7 +23,6 @@ from app.so100_autodetect import find_so100_port, get_camera_info
 @TeleoperatorConfig.register_subclass("mcp")
 @dataclass
 class MCPTeleopConfig(TeleoperatorConfig):
-    # TODO(Steven): Consider setting in here the keys that we want to capture/listen
     port: int = 9988
 
 
@@ -224,6 +223,7 @@ def teleoperate(camera_paths: Dict[str, str],
         calibration_file = (
                 HF_LEROBOT_CALIBRATION / ROBOTS / "so100_follower" / f"{robot_cfg.id}.json"
         )
+        calibration_file.parent.mkdir(parents=True, exist_ok=True)
         with calibration_file.open("w") as f:
             json.dump(calibration, f, indent=4)
 
