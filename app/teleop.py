@@ -222,7 +222,7 @@ def teleoperate(camera_paths: Dict[str, str],
     )
     if calibration:
         calibration_file = (
-                HF_LEROBOT_CALIBRATION / ROBOTS / "so100_follower" / robot_cfg.id + ".json"
+                HF_LEROBOT_CALIBRATION / ROBOTS / "so100_follower" / f"{robot_cfg.id}.json"
         )
         with calibration_file.open("w") as f:
             json.dump(calibration, f, indent=4)
