@@ -10,7 +10,7 @@ from typing import Any, Dict, Optional
 import base64
 import cv2
 import mcp
-from mcp.types import Resource
+from mcp.server.fastmcp.utilities.types import Image
 from lerobot.cameras.opencv import OpenCVCameraConfig
 from lerobot.constants import HF_LEROBOT_CALIBRATION, ROBOTS
 from lerobot.robots import Robot
@@ -68,18 +68,14 @@ class MCPEndEffectorTeleop(Teleoperator):
             return True
 
         @server.tool(description="Get the current image from the robot's gripper camera as jpeg bytes.")
-        def get_gripper_image() -> bytes:
+        def get_gripper_image() -> Image:
             observation = self.robot.get_observation()
             if "gripper" in observation:
                 image = observation["gripper"]
                 jpegimg = cv2.imencode(".jpg", image)[1].tobytes()
             else:
                 jpegimg = b""
-            b64 = base64.b64encode(jpegimg).decode("utf-8")
-            return Resource(
-                uri=f"data:image/png;base64,{b64}",
-                mimeType="image/png"
-            )
+            return Image(data=jpegimg, format="jpeg")
 
     @property
     def feedback_features(self) -> dict:
