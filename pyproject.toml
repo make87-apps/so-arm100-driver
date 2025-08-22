@@ -7,7 +7,7 @@ name = "app"
 version = "0.0.1"
 dependencies = [
   "make87==0.1.0",
-  "lerobot[async,feetech] @ git+https://github.com/huggingface/lerobot.git",
+  "lerobot[async,feetech,kinematics] @ git+https://github.com/huggingface/lerobot.git",
   "protobuf>=5.26.0",
 ]
 description = "A small example package"
