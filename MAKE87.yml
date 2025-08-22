@@ -129,10 +129,10 @@ config:
 
 build:
   build_kit:
-    name: python3
+    name: python3_cuda
 dev_build:
   build_kit:
-    name: python3
+    name: python3_cuda
     build_additions:
       ide: vscode_server_py3
       ssh: ssh_server
