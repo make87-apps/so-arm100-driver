@@ -7,8 +7,10 @@ from pathlib import Path
 from queue import Queue
 from typing import Any, Dict, Optional
 
+import base64
 import cv2
 import mcp
+from mcp.types import Resource
 from lerobot.cameras.opencv import OpenCVCameraConfig
 from lerobot.constants import HF_LEROBOT_CALIBRATION, ROBOTS
 from lerobot.robots import Robot
@@ -59,13 +61,11 @@ class MCPEndEffectorTeleop(Teleoperator):
         self.server = server
 
         @server.tool(description="Move the arm by a certain amount in a direction.")
-        def move_arm(action: ArmAction, value: int = 1):
-            def move_arm_impl():
-                self.event_queue.put((action.value, value))
-                time.sleep(0.1)
-                self.event_queue.put((action.value, value))
-
-            return move_arm_impl
+        def move_arm(action: ArmAction, value: int = 1) -> bool:
+            self.event_queue.put((action.value, value))
+            time.sleep(0.1)
+            self.event_queue.put((action.value, value))
+            return True
 
         @server.tool(description="Get the current image from the robot's gripper camera as jpeg bytes.")
         def get_gripper_image() -> bytes:
@@ -75,7 +75,11 @@ class MCPEndEffectorTeleop(Teleoperator):
                 jpegimg = cv2.imencode(".jpg", image)[1].tobytes()
             else:
                 jpegimg = b""
-            return jpegimg
+            b64 = base64.b64encode(jpegimg).decode("utf-8")
+            return Resource(
+                uri=f"data:image/png;base64,{b64}",
+                mimeType="image/png"
+            )
 
     @property
     def feedback_features(self) -> dict:
@@ -142,24 +146,24 @@ class MCPEndEffectorTeleop(Teleoperator):
 
         # Generate action based on current key states
         for key, val in self.current_pressed.items():
-            if key == ArmAction.up:
+            if key == ArmAction.up.value:
                 delta_y = -int(val)
-            elif key == ArmAction.down:
+            elif key == ArmAction.down.value:
                 delta_y = int(val)
-            elif key == ArmAction.left:
+            elif key == ArmAction.left.value:
                 delta_x = int(val)
-            elif key == ArmAction.right:
+            elif key == ArmAction.right.value:
                 delta_x = -int(val)
-            elif key == ArmAction.forward:
+            elif key == ArmAction.forward.value:
                 delta_z = -int(val)
-            elif key == ArmAction.backward:
+            elif key == ArmAction.backward.value:
                 delta_z = int(val)
-            elif key == ArmAction.gripper_open:
+            elif key == ArmAction.gripper_open.value:
                 # Gripper actions are expected to be between 0 (close), 1 (stay), 2 (open)
                 gripper_action = 2
-            elif key == ArmAction.gripper_close:
+            elif key == ArmAction.gripper_close.value:
                 gripper_action = 0
-            elif key == ArmAction.gripper_stay:
+            elif key == ArmAction.gripper_stay.value:
                 gripper_action = 1
 
         self.current_pressed.clear()
@@ -224,6 +228,7 @@ def teleoperate(camera_paths: Dict[str, str],
         calibration_file = (
                 HF_LEROBOT_CALIBRATION / ROBOTS / "so100_follower" / f"{robot_cfg.id}.json"
         )
+        robot_cfg.calibration_dir = calibration_file.parent
         calibration_file.parent.mkdir(parents=True, exist_ok=True)
         with calibration_file.open("w") as f:
             json.dump(calibration, f, indent=4)
@@ -232,7 +237,7 @@ def teleoperate(camera_paths: Dict[str, str],
     teleop = MCPEndEffectorTeleop(config=MCPTeleopConfig(), robot=robot)
 
     teleop.connect()
-    robot.connect()
+    robot.connect(calibrate=False)
     # just use default
     cfg = TeleoperateConfig(
         robot=robot_cfg,
