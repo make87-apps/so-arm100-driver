@@ -217,7 +217,8 @@ def teleoperate(camera_paths: Dict[str, str],
     robot_cfg = SO100FollowerEndEffectorConfig(
         port=port,
         id=f"so100-{index}",
-        cameras=cameras
+        cameras=cameras,
+        urdf_path=str(Path(__file__).parent.absolute() / "so101_new_calib.urdf")
     )
     if calibration:
         calibration_file = (
