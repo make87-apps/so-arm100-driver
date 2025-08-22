@@ -16,7 +16,7 @@ requires-python = ">=3.9,<3.13"
 
 [tool.setuptools]
 packages = ["app"]
-package-data = { "app" = ["so101_new_calib.urdf"] }
+package-data = { "app" = ["so101_new_calib.urdf", "assets/*.stl"] }
 
 [project.optional-dependencies]
 mcp_control = ["mcp"]
