@@ -72,7 +72,7 @@ class MCPEndEffectorTeleop(Teleoperator):
             observation = self.robot.get_observation()
             if "gripper" in observation:
                 image = observation["gripper"]
-                jpegimg = cv2.imencode(".jpg", image)[1].tobytes()
+                jpegimg = cv2.imencode(".jpg", image[...,::-1])[1].tobytes()
             else:
                 jpegimg = b""
             return Image(data=jpegimg, format="jpeg")
@@ -184,8 +184,10 @@ def teleop_loop(
         action = teleop.get_action()
         if display_data:
             observation = robot.get_observation()
-
-        robot.send_action(action)
+        try:
+            robot.send_action(action)
+        except ...:
+            pass
         dt_s = time.perf_counter() - loop_start
         busy_wait(1 / fps - dt_s)
 
