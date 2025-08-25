@@ -122,9 +122,14 @@ def run_teleop():
     manager = make87.peripherals.manager.PeripheralManager(make87_config=config)
     camera_1: CameraPeripheral = manager.get_peripheral_by_name("CAMERA_1")
 
-    teleoperate(camera_paths={"gripper": camera_1.reference},
-                index=robot_index,
-                calibration=calibration)
+    while True:
+        try:
+            teleoperate(camera_paths={"gripper": camera_1.reference},
+                        index=robot_index,
+                        calibration=calibration)
+        except ...:
+            pass
+
 
 
 if __name__ == "__main__":

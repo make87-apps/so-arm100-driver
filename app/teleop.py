@@ -5,7 +5,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from queue import Queue
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 import base64
 import cv2
@@ -28,16 +28,11 @@ class MCPTeleopConfig(TeleoperatorConfig):
     port: int = 9988
 
 
-class ArmAction(enum.Enum):
-    up = "up"
-    down = "down"
-    left = "left"
-    right = "right"
-    forward = "forward"
-    backward = "backward"
-    gripper_open = "gripper_open"
-    gripper_close = "gripper_close"
-    gripper_stay = "gripper_close"
+
+class ArmPreset(enum.Enum):
+    rest = "rest"
+    top_down = "top_down"
+    work_hover = "work_hover"
 
 
 class MCPEndEffectorTeleop(Teleoperator):
@@ -60,9 +55,58 @@ class MCPEndEffectorTeleop(Teleoperator):
         self._server_thread = None
         self.server = server
 
+
+        # --- goal-based absolute pose driving (via delta interface) ---
+        self._goal_lock = threading.Lock()
+        self._goal_xyz: Optional[Tuple[float, float, float]] = None
+        self._pos_tol = 0.005          # 5 mm tolerance to stop
+        self._max_step_per_tick = 0.25 # error normalization scale → maps to [-1,1]
+
+        # Build presets from bounds, with sane defaults
+        xmin, ymin, zmin = self.robot.config.end_effector_bounds["min"]
+        xmax, ymax, zmax = self.robot.config.end_effector_bounds["max"]
+        xc = 0.5 * (xmin + xmax)
+        yc = 0.5 * (ymin + ymax)
+
+        table_z = None
+        try:
+            cal = getattr(self.robot, "calibration", None)
+            if isinstance(cal, dict):
+                table_z = cal.get("table_z", None)
+        except Exception:
+            table_z = None
+        safe_z_hover = (table_z + 0.05) if isinstance(table_z, (int, float)) else max(zmin + 0.03, zmin + 0.02)
+
+        self._presets: Dict[str, Tuple[float, float, float]] = {
+            "rest": (
+                max(xmin + 0.08, xmin),
+                max(ymin + 0.12, ymin),
+                min(zmax * 0.6, zmax - 0.02),
+            ),
+            "top_down": (
+                xc,
+                min(yc + 0.10, ymax - 0.02),
+                min(zmax - 0.03, zmax),
+            ),
+            "work_hover": (
+                xc,
+                min(yc + 0.20, ymax - 0.02),
+                max(safe_z_hover, zmin + 0.03),
+            ),
+        }
+
         @server.tool(description="Move the arm by a delta in x, y, z (FLU coordinates) and open/close the gripper. Values are in [-1, 1].")
-        def move_arm_vector(delta_forward: float, delta_left: float, delta_up: float, gripper: float):
-            self.delta_queue.put((delta_forward, delta_left, delta_up, gripper + 1))  # gripper in [0, 2]
+        def move_arm_vector(delta_forward: float, delta_left: float, delta_up: float, gripper: float) -> bool:
+            #self.delta_queue.put((delta_forward, delta_left, delta_up, gripper + 1))  # gripper in [0, 2]
+            self.delta_queue.put(
+                {
+                    "delta_x": delta_forward, 
+                    "delta_y": delta_left, 
+                    "delta_z": delta_up, 
+                    "gripper": gripper
+                }
+            )
+            return True
 
 
         @server.tool(description="Get the current image from the robot's gripper camera as jpeg bytes.")
@@ -74,6 +118,15 @@ class MCPEndEffectorTeleop(Teleoperator):
             else:
                 jpegimg = b""
             return Image(data=jpegimg, format="jpeg")
+
+        @server.tool(description="Move the end-effector to a preset pose.")
+        def move_to_preset(preset: ArmPreset) -> bool:
+            target = self._presets.get(preset.value)
+            if target is None:
+                return False
+            with self._goal_lock:
+                self._goal_xyz = self._clamp_to_bounds(target)
+            return True
 
     @property
     def feedback_features(self) -> dict:
@@ -151,6 +204,8 @@ class MCPEndEffectorTeleop(Teleoperator):
 
         return action_dict
 
+    
+
 
 def teleop_loop(
         teleop: Teleoperator, robot: Robot, fps: int, display_data: bool = False, duration: float | None = None
@@ -193,15 +248,19 @@ def teleoperate(camera_paths: Dict[str, str],
             index_or_path=Path(path),
             width=w, height=h, fps=fps
         )
-
+        
     robot_cfg = SO100FollowerEndEffectorConfig(
         port=port,
         id=f"so100-{index}",
         cameras=cameras,
         end_effector_step_sizes={
-            "x": 0.2,
-            "y": 0.2,
-            "z": 0.2,
+            "x": 0.1,
+            "y": 0.1,
+            "z": 0.1,
+        },
+        end_effector_bounds={
+            "min": [-0.40, -0.50, 0.02],  # X/Y limits over your table # 2 cm above the surface to avoid scraping
+            "max": [ 0.40,  0.60, 0.45],               # and a sane Z-max
         },
         urdf_path=str(Path(__file__).parent.absolute() / "so101_new_calib.urdf")
     )
