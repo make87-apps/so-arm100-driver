@@ -53,19 +53,17 @@ class MCPEndEffectorTeleop(Teleoperator):
         self.config = config
         self.robot_type = config.type
         self.robot = robot
-        self.event_queue = Queue()
-        self.current_pressed = {}
+        self.delta_queue = Queue()
+        self.current_pressed = []
         self.logs = {}
         server = mcp.server.FastMCP(name="image_describer", host="0.0.0.0", port=config.port)
         self._server_thread = None
         self.server = server
 
-        @server.tool(description="Move the arm by a certain amount in a direction.")
-        def move_arm(action: ArmAction, value: int = 1) -> bool:
-            self.event_queue.put((action.value, value))
-            time.sleep(0.1)
-            self.event_queue.put((action.value, value))
-            return True
+        @server.tool(description="Move the arm by a delta in x, y, z (FLU coordinates) and open/close the gripper. Values are in [-1, 1].")
+        def move_arm_vector(delta_forward: float, delta_left: float, delta_up: float, gripper: float):
+            self.delta_queue.put((delta_forward, delta_left, delta_up, gripper + 1))  # gripper in [0, 2]
+
 
         @server.tool(description="Get the current image from the robot's gripper camera as jpeg bytes.")
         def get_gripper_image() -> Image:
@@ -101,12 +99,9 @@ class MCPEndEffectorTeleop(Teleoperator):
         pass
 
     def _drain_pressed_keys(self):
-        while not self.event_queue.empty():
-            key_char, val = self.event_queue.get_nowait()
-            if key_char in self.current_pressed:
-                self.current_pressed[key_char] += val
-            else:
-                self.current_pressed[key_char] = val
+        while not self.delta_queue.empty():
+            vals = self.delta_queue.get_nowait()
+            self.current_pressed.append(vals)
 
     def configure(self):
         pass
@@ -135,41 +130,24 @@ class MCPEndEffectorTeleop(Teleoperator):
             )
 
         self._drain_pressed_keys()
-        delta_x = 0.0
-        delta_y = 0.0
-        delta_z = 0.0
-        gripper_action = 1.0
+
+        action_dict = {
+            "delta_x": 0.0,
+            "delta_y": 0.0,
+            "delta_z": 0.0,
+            "gripper": 1.0,
+        }
 
         # Generate action based on current key states
-        for key, val in self.current_pressed.items():
-            if key == ArmAction.up.value:
-                delta_y = -int(val)
-            elif key == ArmAction.down.value:
-                delta_y = int(val)
-            elif key == ArmAction.left.value:
-                delta_x = int(val)
-            elif key == ArmAction.right.value:
-                delta_x = -int(val)
-            elif key == ArmAction.forward.value:
-                delta_z = -int(val)
-            elif key == ArmAction.backward.value:
-                delta_z = int(val)
-            elif key == ArmAction.gripper_open.value:
-                # Gripper actions are expected to be between 0 (close), 1 (stay), 2 (open)
-                gripper_action = 2
-            elif key == ArmAction.gripper_close.value:
-                gripper_action = 0
-            elif key == ArmAction.gripper_stay.value:
-                gripper_action = 1
+        for val in self.current_pressed:
+            action_dict["delta_x"] += val["delta_x"]
+            action_dict["delta_y"] += val["delta_y"]
+            action_dict["delta_z"] += val["delta_z"]
+            action_dict["gripper"] = val["gripper"]  # just take the last
 
         self.current_pressed.clear()
 
-        action_dict = {
-            "delta_x": delta_x,
-            "delta_y": delta_y,
-            "delta_z": delta_z,
-            "gripper": gripper_action,
-        }
+
 
         return action_dict
 
@@ -220,6 +198,11 @@ def teleoperate(camera_paths: Dict[str, str],
         port=port,
         id=f"so100-{index}",
         cameras=cameras,
+        end_effector_step_sizes={
+            "x": 0.2,
+            "y": 0.2,
+            "z": 0.2,
+        },
         urdf_path=str(Path(__file__).parent.absolute() / "so101_new_calib.urdf")
     )
     if calibration:
