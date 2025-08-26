@@ -72,7 +72,7 @@ class CustomRobotClient(RobotClient):
                     self.pause.wait()
 
                 # Use StreamActions to get a stream of actions from the server
-                actions_chunk = self.stub.GetActions(services_pb2.Empty())
+                actions_chunk = self.stub.GetActions(services_pb2_grpc.Empty())
                 if len(actions_chunk.data) == 0:
                     continue  # received `Empty` from server, wait for next call
 
