@@ -127,7 +127,7 @@ def run_teleop():
             teleoperate(camera_paths={"gripper": camera_1.reference},
                         index=robot_index,
                         calibration=calibration)
-        except ...:
+        except Exception:
             pass
 
 

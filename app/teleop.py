@@ -10,12 +10,17 @@ from typing import Any, Dict, Optional, Tuple
 import base64
 import cv2
 import mcp
+import numpy as np
+import math
+import random
 from mcp.server.fastmcp.utilities.types import Image
 from lerobot.cameras.opencv import OpenCVCameraConfig
 from lerobot.constants import HF_LEROBOT_CALIBRATION, ROBOTS
 from lerobot.robots import Robot
+from lerobot.motors import MotorCalibration
 from lerobot.robots.so100_follower import SO100FollowerEndEffectorConfig, SO100FollowerEndEffector
 from lerobot.teleoperate import TeleoperateConfig
+from lerobot.teleoperators.keyboard import KeyboardTeleop, KeyboardTeleopConfig
 from lerobot.teleoperators import Teleoperator, TeleoperatorConfig
 from lerobot.utils.robot_utils import busy_wait
 
@@ -56,44 +61,13 @@ class MCPEndEffectorTeleop(Teleoperator):
         self.server = server
 
 
-        # --- goal-based absolute pose driving (via delta interface) ---
         self._goal_lock = threading.Lock()
         self._goal_xyz: Optional[Tuple[float, float, float]] = None
-        self._pos_tol = 0.005          # 5 mm tolerance to stop
-        self._max_step_per_tick = 0.25 # error normalization scale → maps to [-1,1]
+        self._pos_tol = 0.005           # 5 mm
+        self._max_step_per_tick = 0.25  # maps error meters → [-1, 1] deltas
 
-        # Build presets from bounds, with sane defaults
-        xmin, ymin, zmin = self.robot.config.end_effector_bounds["min"]
-        xmax, ymax, zmax = self.robot.config.end_effector_bounds["max"]
-        xc = 0.5 * (xmin + xmax)
-        yc = 0.5 * (ymin + ymax)
-
-        table_z = None
-        try:
-            cal = getattr(self.robot, "calibration", None)
-            if isinstance(cal, dict):
-                table_z = cal.get("table_z", None)
-        except Exception:
-            table_z = None
-        safe_z_hover = (table_z + 0.05) if isinstance(table_z, (int, float)) else max(zmin + 0.03, zmin + 0.02)
-
-        self._presets: Dict[str, Tuple[float, float, float]] = {
-            "rest": (
-                max(xmin + 0.08, xmin),
-                max(ymin + 0.12, ymin),
-                min(zmax * 0.6, zmax - 0.02),
-            ),
-            "top_down": (
-                xc,
-                min(yc + 0.10, ymax - 0.02),
-                min(zmax - 0.03, zmax),
-            ),
-            "work_hover": (
-                xc,
-                min(yc + 0.20, ymax - 0.02),
-                max(safe_z_hover, zmin + 0.03),
-            ),
-        }
+        self.last_delta = None
+        self.random_move_time = time.time()
 
         @server.tool(description="Move the arm by a delta in x, y, z (FLU coordinates) and open/close the gripper. Values are in [-1, 1].")
         def move_arm_vector(delta_forward: float, delta_left: float, delta_up: float, gripper: float) -> bool:
@@ -121,11 +95,11 @@ class MCPEndEffectorTeleop(Teleoperator):
 
         @server.tool(description="Move the end-effector to a preset pose.")
         def move_to_preset(preset: ArmPreset) -> bool:
-            target = self._presets.get(preset.value)
-            if target is None:
+            target_xyz = self._preset_target_xyz_from_calibration(preset)
+            if target_xyz is None:
                 return False
             with self._goal_lock:
-                self._goal_xyz = self._clamp_to_bounds(target)
+                self._goal_xyz = target_xyz
             return True
 
     @property
@@ -156,6 +130,24 @@ class MCPEndEffectorTeleop(Teleoperator):
             vals = self.delta_queue.get_nowait()
             self.current_pressed.append(vals)
 
+        if time.time() - self.random_move_time > 1.5:
+            if self.last_delta:
+                self.delta_queue.put({
+                        "delta_x": -self.last_delta["delta_x"], 
+                        "delta_y": -self.last_delta["delta_y"], 
+                        "delta_z": -self.last_delta["delta_z"],
+                        "gripper": 0.
+                    })
+            delta = {
+                        "delta_x": random.random() * 0.4, 
+                        "delta_y": random.random() * 0.4, 
+                        "delta_z": random.random() * 0.4,
+                        "gripper": 0.
+                    }
+            self.delta_queue.put(delta)
+            self.last_delta = delta
+            self.random_move_time = time.time()
+
     def configure(self):
         pass
 
@@ -178,32 +170,147 @@ class MCPEndEffectorTeleop(Teleoperator):
 
     def get_action(self) -> Dict[str, Any]:
         if not self.is_connected:
-            raise RuntimeError(
-                "KeyboardTeleop is not connected. You need to run `connect()` before `get_action()`."
-            )
+            raise RuntimeError("KeyboardTeleop is not connected. You need to run `connect()` before `get_action()`.")
+
+        goal_act = self._goal_action_step(grip_hold=1.0)
+        if goal_act is not None:
+            return goal_act
 
         self._drain_pressed_keys()
-
-        action_dict = {
-            "delta_x": 0.0,
-            "delta_y": 0.0,
-            "delta_z": 0.0,
-            "gripper": 1.0,
-        }
-
-        # Generate action based on current key states
+        action_dict = {"delta_x": 0.0, "delta_y": 0.0, "delta_z": 0.0, "gripper": 1.0}
         for val in self.current_pressed:
             action_dict["delta_x"] += val["delta_x"]
             action_dict["delta_y"] += val["delta_y"]
             action_dict["delta_z"] += val["delta_z"]
-            action_dict["gripper"] = val["gripper"]  # just take the last
-
+            action_dict["gripper"] = val["gripper"]
         self.current_pressed.clear()
-
-
-
         return action_dict
 
+    # ---------- goal follower (NO bounds clamp; calibration-driven IK in robot does the rest) ----------
+    def _get_current_xyz(self) -> Optional[Tuple[float, float, float]]:
+        # Prefer robot.current_ee_pos if available (already computed by SO100FollowerEndEffector)
+        try:
+            T = getattr(self.robot, "current_ee_pos", None)
+            if T is not None:
+                return (float(T[0, 3]), float(T[1, 3]), float(T[2, 3]))
+        except Exception:
+            pass
+
+        # Fallback: recompute FK from current joints if we can read them
+        try:
+            obs = self.robot.get_observation()
+            # your obs uses keys like "shoulder_pan.pos" etc.
+            order = ["shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex", "wrist_roll"]
+            joints_deg = []
+            for name in order:
+                v = obs.get(f"{name}.pos", None)
+                if v is None:
+                    return None
+                joints_deg.append(float(v))
+            import numpy as np
+            T = self.robot.kinematics.forward_kinematics(np.array(joints_deg, dtype=np.float32))
+            return (float(T[0, 3]), float(T[1, 3]), float(T[2, 3]))
+        except Exception:
+            return None
+
+    def _goal_action_step(self, grip_hold: float = 1.0) -> Optional[Dict[str, float]]:
+        with self._goal_lock:
+            goal = self._goal_xyz
+        if goal is None:
+            return None
+        cur = self._get_current_xyz()
+        if cur is None:
+            with self._goal_lock:
+                self._goal_xyz = None
+            return None
+
+        ex, ey, ez = goal[0] - cur[0], goal[1] - cur[1], goal[2] - cur[2]
+        dist = math.sqrt(ex*ex + ey*ey + ez*ez)
+        if dist <= self._pos_tol:
+            with self._goal_lock:
+                self._goal_xyz = None
+            return {"delta_x": 0.0, "delta_y": 0.0, "delta_z": 0.0, "gripper": grip_hold}
+
+        def clamp(v: float) -> float:
+            return max(-1.0, min(1.0, v))
+
+        scale = self._max_step_per_tick
+        return {
+            "delta_x": clamp(ex / scale),
+            "delta_y": clamp(ey / scale),
+            "delta_z": clamp(ez / scale),
+            "gripper": grip_hold,
+        }
+
+    # ---------- helpers that USE CALIBRATION + FK ----------
+    def _read_calibration(self) -> Optional[Dict[str, Dict[str, int]]]:
+        cal = getattr(self.robot, "calibration", None)
+        # your provided blob is either under ['calibration'] or flat
+        if isinstance(cal, dict) and "calibration" in cal and isinstance(cal["calibration"], dict):
+            return cal["calibration"]
+        if isinstance(cal, dict) and all(isinstance(v, dict) for v in cal.values()):
+            return cal
+        return None
+
+    @staticmethod
+    def _ticks_to_degrees(ticks: float, homing_offset: float) -> float:
+        # Feetech STS range 0..4095 ≈ 0..360 degrees; apply homing offset (ticks) before scaling
+        return ((ticks - homing_offset) * 360.0) / 4095.0
+
+    def _fraction_to_deg(self, joint_cal: MotorCalibration, frac: float) -> float:
+        rmin = float(joint_cal.range_min)
+        rmax = float(joint_cal.range_max)
+        hoff = float(joint_cal.homing_offset)
+        tgt_ticks = rmin + max(0.0, min(1.0, frac)) * (rmax - rmin)
+        return self._ticks_to_degrees(tgt_ticks, hoff)
+
+    def _preset_joint_degrees(self, cal: Dict[str, MotorCalibration], preset: ArmPreset) -> Tuple[float, float, float, float, float]:
+        f = lambda name, p: self._fraction_to_deg(cal[name], p)
+        if preset is ArmPreset.rest:
+            return (
+                f("shoulder_pan", 0.50),
+                f("shoulder_lift", 0.95),
+                f("elbow_flex",   0.2),
+                f("wrist_flex",   0.80),
+                f("wrist_roll",   0.0),
+            )
+        elif preset is ArmPreset.top_down:
+            # up + wrist pitched for top-down. Flip the 0.75/0.35 if your rig is inverted.
+            return (
+                f("shoulder_pan", 0.50),
+                f("shoulder_lift", 0.5),
+                f("elbow_flex",   0.0),
+                f("wrist_flex",   0.80),
+                f("wrist_roll",   0.0),
+            )
+        elif preset is ArmPreset.work_hover:
+            return (
+                f("shoulder_pan", 0.50),
+                f("shoulder_lift", 0.60),
+                f("elbow_flex",   0.45),
+                f("wrist_flex",   0.65),
+                f("wrist_roll",   0.50),
+            )
+        else:
+            raise ValueError(preset)
+
+    def _preset_target_xyz_from_calibration(self, preset: ArmPreset) -> Optional[tuple[float, float, float]]:
+        cal = self.robot.calibration
+
+        # build 5 arm joints
+        arm_jdeg = self._preset_joint_degrees(cal, preset)  # (pan, lift, elbow, wrist_flex, wrist_roll)
+
+        # add a neutral gripper so vector length matches URDF joint_names (6)
+        gripper_mid = self._fraction_to_deg(cal["gripper"], 0.5)
+        all_jdeg = (*arm_jdeg, gripper_mid)
+
+        try:
+            joints_for_fk = np.asarray(all_jdeg, dtype=np.float64)
+            T = self.robot.kinematics.forward_kinematics(joints_for_fk)
+            return float(T[0,3]), float(T[1,3]), float(T[2,3])
+        except Exception as e:
+            print(f"FK failed: {e}")
+            return None
     
 
 
@@ -226,11 +333,11 @@ def teleop_loop(
 
         loop_s = time.perf_counter() - loop_start
 
-        print("\n" + "-" * (display_len + 10))
-        print(f"{'NAME':<{display_len}} | {'NORM':>7}")
-        for motor, value in action.items():
-            print(f"{motor:<{display_len}} | {value:>7.2f}")
-        print(f"\ntime: {loop_s * 1e3:.2f}ms ({1 / loop_s:.0f} Hz)")
+        #print("\n" + "-" * (display_len + 10))
+        #print(f"{'NAME':<{display_len}} | {'NORM':>7}")
+        #for motor, value in action.items():
+        #    print(f"{motor:<{display_len}} | {value:>7.2f}")
+        #print(f"\ntime: {loop_s * 1e3:.2f}ms ({1 / loop_s:.0f} Hz)")
 
         if duration is not None and time.perf_counter() - start >= duration:
             return
@@ -275,6 +382,9 @@ def teleoperate(camera_paths: Dict[str, str],
 
     robot = SO100FollowerEndEffector(config=robot_cfg)
     teleop = MCPEndEffectorTeleop(config=MCPTeleopConfig(), robot=robot)
+    #teleop = KeyboardTeleop(config=KeyboardTeleopConfig(
+    #    calibration_dir=robot_cfg.calibration_dir
+    #))
 
     teleop.connect()
     robot.connect(calibrate=False)
