@@ -30,8 +30,8 @@ from lerobot.robots.so100_follower import SO100FollowerConfig
 from lerobot.scripts.server.robot_client import RobotClient
 import pickle
 from lerobot.transport import (
-    async_inference_pb2,  # type: ignore
-    async_inference_pb2_grpc,  # type: ignore
+    services_pb2,  # type: ignore
+    services_pb2_grpc,  # type: ignore
 )
 import grpc
 
@@ -47,8 +47,9 @@ class CustomRobotClient(RobotClient):
                  ):
         if calibration:
             calibration_file = (
-                config.robot.calibration_dir if config.robot.calibration_dir else HF_LEROBOT_CALIBRATION / ROBOTS / "so100_follower" / config.robot.id + ".json"
+                config.robot.calibration_dir if config.robot.calibration_dir else HF_LEROBOT_CALIBRATION / ROBOTS / "so100_follower" / (config.robot.id + ".json")
             )
+            calibration_file.parent.mkdir(parents=True, exist_ok=True)
             with calibration_file.open("w") as f:
                 json.dump(calibration, f, indent=4)
 
@@ -71,7 +72,7 @@ class CustomRobotClient(RobotClient):
                     self.pause.wait()
 
                 # Use StreamActions to get a stream of actions from the server
-                actions_chunk = self.stub.GetActions(async_inference_pb2.Empty())
+                actions_chunk = self.stub.GetActions(services_pb2.Empty())
                 if len(actions_chunk.data) == 0:
                     continue  # received `Empty` from server, wait for next call
 
