@@ -29,7 +29,9 @@ def run_policy_controlled():
     robot_index = make87.config.get_config_value(config, "robot_index", default=0, converter=int)
     actions_per_chunk = make87.config.get_config_value(config, "actions_per_chunk", default=10, converter=int)
     pretrained_name_or_path = make87.config.get_config_value(config, "pretrained_name_or_path",
-                                                             default="helper2424/act_purple_platform")
+                                                             default="rtsmc/smolvla_box_in_bin_so101_test")
+    policy_type = make87.config.get_config_value(config, "policy_type",
+                                                             default="smolvla")
     camera_1_name = make87.config.get_config_value(config, "camera_1_name", default="front")
     camera_2_name = make87.config.get_config_value(config, "camera_2_name", default="wrist")
     calibration = make87.config.get_config_value(config, "calibration")
@@ -97,7 +99,7 @@ def run_policy_controlled():
     robot_config = get_so100_policy_config(
         server_address=server_address,
         actions_per_chunk=actions_per_chunk,
-        policy_type="act",
+        policy_type=policy_type,
         pretrained_name_or_path=pretrained_name_or_path,
         index=robot_index,
         camera_paths=camera_paths,

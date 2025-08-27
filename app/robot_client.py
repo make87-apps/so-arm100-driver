@@ -72,7 +72,7 @@ class CustomRobotClient(RobotClient):
                     self.pause.wait()
 
                 # Use StreamActions to get a stream of actions from the server
-                actions_chunk = self.stub.GetActions(services_pb2_grpc.Empty())
+                actions_chunk = self.stub.GetActions(services_pb2.Empty())
                 if len(actions_chunk.data) == 0:
                     continue  # received `Empty` from server, wait for next call
 
@@ -170,7 +170,7 @@ class CustomRobotClient(RobotClient):
                 _captured_observation = self.control_loop_observation(self.current_task, verbose)
                 self.on_observation_callback(_captured_observation)
 
-            self.logger.info(f"Control loop (ms): {(time.perf_counter() - control_loop_start) * 1000:.2f}")
+            #self.logger.info(f"Control loop (ms): {(time.perf_counter() - control_loop_start) * 1000:.2f}")
             # Dynamically adjust sleep time to maintain the desired control frequency
             time.sleep(max(0, self.config.environment_dt - (time.perf_counter() - control_loop_start)))
 
