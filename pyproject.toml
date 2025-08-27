@@ -6,9 +6,10 @@ build-backend = "setuptools.build_meta"
 name = "app"
 version = "0.0.1"
 dependencies = [
-  "make87==0.1.0",
+  "make87[zenoh,protobuf]==0.1.0", 
   "lerobot[async,feetech,kinematics] @ git+https://github.com/huggingface/lerobot.git",
   "protobuf>=5.26.0",
+  "make87-messages-pb6"
 ]
 description = "A small example package"
 readme = "README.md"
@@ -20,6 +21,6 @@ package-data = { "app" = ["so101_new_calib.urdf", "assets/*.stl", "assets/*.part
 
 [project.optional-dependencies]
 mcp_control = ["mcp"]
-policy_control = ["make87[zenoh,protobuf]==0.1.0", "make87-messages-pb6"]
+policy_control = []
 
 # add package dataapp/so101_new_calib.urdf

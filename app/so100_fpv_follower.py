@@ -1,114 +1,87 @@
 import logging
-from typing import Any
+from typing import Any, Callable
 
 import numpy as np
 from lerobot.errors import DeviceNotConnectedError
-from lerobot.robots.so100_follower import SO100FollowerEndEffector, SO100FollowerEndEffectorConfig
+from lerobot.robots.so100_follower import SO100FollowerEndEffector, SO100Follower
 
 
 logger = logging.getLogger(__name__)
 
 class SO100FPVFollower(SO100FollowerEndEffector):
-    def send_action(self, action: dict[str, Any]) -> dict[str, Any]:
-        """
-        Transform action from end-effector space (x,y,z + pitch,yaw) to joint space and send to motors.
 
-        Expected dict keys:
-          - 'delta_x', 'delta_y', 'delta_z' (linear deltas)
-          - 'delta_pitch', 'delta_yaw' (angular deltas, scaled by step sizes; radians per unit)
-          - optional 'gripper' in [0..2] where 1.0 is no change
-        """
+    def send_action(self, action: dict[str, Any]) -> dict[str, Any]:
         if not self.is_connected:
             raise DeviceNotConnectedError(f"{self} is not connected.")
 
-        # Defaults for step sizes if not provided
         step = self.config.end_effector_step_sizes
-        sx = step.get("x", 1.0)
-        sy = step.get("y", 1.0)
-        sz = step.get("z", 1.0)
-        sp = step.get("pitch", 0.02)  # ~1.1° per unit
-        syaw = step.get("yaw", 0.02)  # ~1.1° per unit
+        sx, sy, sz = step.get("x", 1.0), step.get("y", 1.0), step.get("z", 1.0)
+        sp, syaw, sr = step.get("pitch", 0.5), step.get("yaw", 0.5), step.get("roll", 0.5)  # deg per unit
 
-        # Parse action
-        if isinstance(action, dict):
-            # Position deltas
-            if not all(k in action for k in ["delta_x", "delta_y", "delta_z"]):
-                logger.warning(
-                    f"Expected action keys 'delta_x', 'delta_y', 'delta_z', got {list(action.keys())}"
-                )
-                delta_ee = np.zeros(3, dtype=np.float32)
-            else:
-                delta_ee = np.array(
-                    [
-                        action["delta_x"] * sx,
-                        action["delta_y"] * sy,
-                        action["delta_z"] * sz,
-                        ],
-                    dtype=np.float32,
-                )
-
-            # Orientation deltas (end-effector frame)
-            delta_pitch = float(action.get("delta_pitch", 0.0)) * sp
-            delta_yaw   = float(action.get("delta_yaw", 0.0)) * syaw
-
-            # Gripper channel (map same as before; default to 1.0=no change)
-            if "gripper" not in action:
-                action["gripper"] = [1.0]
-            grip_in = action["gripper"]
+        # Parse linear deltas (local/gripper frame) UFL coords
+        if not all(k in action for k in ("delta_x", "delta_y", "delta_z")):
+            logger.warning(f"Missing one of delta_x/y/z; zeroing translation. Got keys: {list(action.keys())}")
+            delta_local = np.zeros(3, dtype=np.float32)
         else:
-            # If someone passes a numpy array: [dx, dy, dz, (grip?)] — orientation would be missing; reject.
-            logger.warning("Array action without orientation not supported; ignoring and sending zeros.")
-            delta_ee = np.zeros(3, dtype=np.float32)
-            delta_pitch = 0.0
-            delta_yaw = 0.0
-            grip_in = [1.0]
+            # we get FLU and this seems to be DLB
+            # Back, Left, Down
+            delta_local = np.array(
+                [-1 * action["delta_z"] * sx, 
+                action["delta_y"] * sy, 
+                -1 * action["delta_x"] * sz],
+                dtype=np.float32,
+            )
+
+        # Parse angular deltas (local yaw then local pitch)
+        delta_pitch = float(action.get("delta_pitch", 0.0)) * sp * -1
+        delta_roll = float(action.get("delta_roll", 0.0)) * sr
+        delta_yaw   = float(action.get("delta_yaw", 0.0))   * syaw
+
+        # Gripper: accept scalar or array
+        grip_raw = action.get("gripper", 1.0)
+        try:
+            grip_val = float(np.asarray(grip_raw).ravel()[-1])
+        except Exception:
+            logger.warning(f"Invalid gripper value {grip_raw!r}; defaulting to 1.0")
+            grip_val = 1.0
 
         # Initialize state if needed
         if self.current_joint_pos is None:
-            current_joint_pos = self.bus.sync_read("Present_Position")
-            self.current_joint_pos = np.array([current_joint_pos[name] for name in self.bus.motors])
-
+            present = self.bus.sync_read("Present_Position")
+            self.current_joint_pos = np.array([present[name] for name in self.bus.motors])
         if self.current_ee_pos is None:
             self.current_ee_pos = self.kinematics.forward_kinematics(self.current_joint_pos)
 
-        # Build desired pose: translate + rotate (R_current @ Rz(yaw) @ Ry(pitch))
-        desired_ee_pos = np.eye(4, dtype=np.float32)
 
-        # Position with bounds
-        t = self.current_ee_pos[:3, 3] + delta_ee
+        grip_delta = np.eye(4)
+        grip_delta[:3, 3] = delta_local
+        grip_delta[:3, :3] = _rot_x(delta_yaw) @ _rot_y(delta_pitch) @ _rot_z(delta_roll)
+        desired_ee = np.eye(4, dtype=np.float32)
+        desired_ee = self.current_ee_pos @ grip_delta
+
         if self.end_effector_bounds is not None:
-            t = np.clip(t, self.end_effector_bounds["min"], self.end_effector_bounds["max"])
-        desired_ee_pos[:3, 3] = t
+            grip_delta[:3, 3] = np.clip(grip_delta[:3, 3], self.end_effector_bounds["min"], self.end_effector_bounds["max"])
 
-        # Orientation update in end-effector frame (yaw about local Z, then pitch about local Y)
-        R_cur = self.current_ee_pos[:3, :3]
-        R_delta = _rot_z(delta_yaw) @ _rot_y(delta_pitch)
-        desired_ee_pos[:3, :3] = (R_cur @ R_delta).astype(np.float32)
+        # Local orientation update: R_des = R_cur @ Rz(yaw) @ Ry(pitch)
+        
 
-        # IK: joint targets (degrees, consistent with existing API)
-        target_joint_values_in_degrees = self.kinematics.inverse_kinematics(
-            self.current_joint_pos, desired_ee_pos
-        )
+        target_deg = self.kinematics.inverse_kinematics(self.current_joint_pos, desired_ee)
 
-        # Joint space action
         joint_action = {
-            f"{key}.pos": target_joint_values_in_degrees[i]
-            for i, key in enumerate(self.bus.motors.keys())
+            f"{name}.pos": target_deg[i]
+            for i, name in enumerate(self.bus.motors.keys())
         }
-
-        # Gripper handling
         joint_action["gripper.pos"] = np.clip(
-            self.current_joint_pos[-1] + (grip_in[-1] - 1.0) * self.config.max_gripper_pos,
+            self.current_joint_pos[-1] + (grip_val - 1.0) * self.config.max_gripper_pos,
             5,
             self.config.max_gripper_pos,
-            )
+        )
 
-        # Update caches
-        self.current_ee_pos = desired_ee_pos.copy()
-        self.current_joint_pos = target_joint_values_in_degrees.copy()
+        self.current_ee_pos = desired_ee.copy()
+        self.current_joint_pos = target_deg.copy()
         self.current_joint_pos[-1] = joint_action["gripper.pos"]
 
-        return super().send_action(joint_action)
+        return super(SO100FollowerEndEffector, self).send_action(joint_action)
 
 def _rot_y(pitch: float) -> np.ndarray:
     pitch = np.deg2rad(pitch)
@@ -117,9 +90,16 @@ def _rot_y(pitch: float) -> np.ndarray:
                      [ 0, 1,  0],
                      [-s, 0,  c]], dtype=np.float32)
 
-def _rot_z(yaw: float) -> np.ndarray:
+def _rot_x(yaw: float) -> np.ndarray:
     yaw = np.deg2rad(yaw)
     c, s = np.cos(yaw), np.sin(yaw)
-    return np.array([[ c, -s, 0],
-                     [ s,  c, 0],
-                     [ 0,  0, 1]], dtype=np.float32)
+    return np.array([[1, 0, 0],
+                    [0, c,-s],
+                    [0, s, c]], dtype=np.float32)
+
+def _rot_z(a: float) -> np.ndarray:
+    a = np.deg2rad(a)
+    c, s = np.cos(a), np.sin(a)
+    return np.array([[ c,-s, 0],
+                     [ s, c, 0],
+                     [ 0, 0, 1]], dtype=np.float32)

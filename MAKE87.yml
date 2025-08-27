@@ -136,16 +136,30 @@ dev_build:
     build_additions:
       ide: vscode_server_py3
       ssh: ssh_server
-peripheral_requirements:
-  - peripheral_type: Camera
-    name: CAMERA_1
 
+    peripheral_requirements:
+      - peripheral_type: Camera
+        name: CAMERA_1
 variants:
   mcp_control:
+    contianer_config:
+      environment:
+        TELEOP: "true"
     build:
       custom:
         dockerfile: build_kits/Dockerfile
     interfaces:
+      - name: zenoh-client
+        protocol: zenoh
+        default_port:
+          name: zenoh-client
+          protocol: TCP
+          target_port: 7447
+        publishers:
+          - name: IMAGE
+            spec:
+              make87_message: make87_messages.image.compressed.image_jpeg.ImageJPEG
+            encoding: proto
       - name: mcp-server
         protocol: mcp
         servers:

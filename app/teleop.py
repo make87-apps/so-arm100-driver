@@ -5,7 +5,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from queue import Queue
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple, Callable
 
 import base64
 import cv2
@@ -23,6 +23,7 @@ from lerobot.teleoperate import TeleoperateConfig
 from lerobot.teleoperators.keyboard import KeyboardTeleop, KeyboardTeleopConfig
 from lerobot.teleoperators import Teleoperator, TeleoperatorConfig
 from lerobot.utils.robot_utils import busy_wait
+
 
 from app.so100_autodetect import find_so100_port, get_camera_info
 from app.so100_fpv_follower import SO100FPVFollower
@@ -70,8 +71,8 @@ class MCPEndEffectorTeleop(Teleoperator):
         self.last_delta = None
         self.random_move_time = time.time()
 
-        @server.tool(description="Move the arm by a delta in x, y, z (FLU coordinates) and open/close the gripper. Values are in [-1, 1]. delta_pitch and delta_yaw are in degrees.")
-        def move_arm_vector(delta_forward: float, delta_left: float, delta_up: float, gripper: float, delta_pitch: float = 0.0, delta_yaw: float = 0.0) -> bool:
+        @server.tool(description="Move the arm by setting the deltas. Values are in [-1, 1]. delta_pitch and delta_yaw and delta_roll are in degrees.")
+        def move_arm_vector(delta_forward: float, delta_left: float, delta_up: float, gripper: float, delta_pitch: float = 0.0, delta_yaw: float = 0.0, delta_roll: float = 0.0) -> str:
             #self.delta_queue.put((delta_forward, delta_left, delta_up, gripper + 1))  # gripper in [0, 2]
             self.delta_queue.put(
                 {
@@ -80,10 +81,13 @@ class MCPEndEffectorTeleop(Teleoperator):
                     "delta_z": delta_up, 
                     "gripper": gripper,
                     "delta_pitch": delta_pitch,
-                    "delta_yaw": delta_yaw
+                    "delta_yaw": delta_yaw,
+                    "delta_roll": delta_roll
                 }
             )
-            return True
+            time.sleep(1)
+
+            return "Move arm command succelfully sent"
 
 
         @server.tool(description="Get the current image from the robot's gripper camera as jpeg bytes.")
@@ -125,7 +129,7 @@ class MCPEndEffectorTeleop(Teleoperator):
             vals = self.delta_queue.get_nowait()
             self.current_pressed.append(vals)
 
-        if time.time() - self.random_move_time > 1.5:
+        if time.time() - self.random_move_time > 1.5 and False:
             if self.last_delta:
                 self.delta_queue.put({
                         "delta_x": -self.last_delta["delta_x"], 
@@ -133,13 +137,17 @@ class MCPEndEffectorTeleop(Teleoperator):
                         "delta_z": -self.last_delta["delta_z"],
                         "gripper": 0.,
                         "delta_pitch": -self.last_delta.get("delta_pitch", 0.0),
-                        "delta_yaw": -self.last_delta.get("delta_yaw", 0.)
+                        "delta_yaw": -self.last_delta.get("delta_yaw", 0.),
+                        "delta_roll": -self.last_delta.get("delta_roll", 0.)
                     })
             delta = {
-                        "delta_x": random.random() * 0.4, 
-                        "delta_y": random.random() * 0.4, 
-                        "delta_z": random.random() * 0.4,
-                        "gripper": 0.
+                        "delta_x": random.random() * 0.01, 
+                        "delta_y": random.random() * 0.01, 
+                        "delta_z": random.random() * 0.01,
+                        "gripper": 0.,
+                        "delta_pitch": random.random() * 90, 
+                        "delta_yaw": random.random() * 90,
+                        "delta_roll": random.random() * 15,
                     }
             self.delta_queue.put(delta)
             self.last_delta = delta
@@ -162,7 +170,7 @@ class MCPEndEffectorTeleop(Teleoperator):
         return {
             "dtype": "float32",
             "shape": (4,),
-            "names": {"delta_x": 0, "delta_y": 1, "delta_z": 2,"gripper": 3, "delta_pitch": 4, "delta_yaw": 5},
+            "names": {"delta_x": 0, "delta_y": 1, "delta_z": 2,"gripper": 3, "delta_pitch": 4, "delta_yaw": 5, "delta_roll": 5},
         }
 
     def get_action(self) -> Dict[str, Any]:
@@ -170,7 +178,7 @@ class MCPEndEffectorTeleop(Teleoperator):
             raise RuntimeError("KeyboardTeleop is not connected. You need to run `connect()` before `get_action()`.")
 
         self._drain_pressed_keys()
-        action_dict = {"delta_x": 0.0, "delta_y": 0.0, "delta_z": 0.0, "gripper": 1.0, "delta_pitch": 0.0, "delta_yaw": 0.0}
+        action_dict = {"delta_x": 0.0, "delta_y": 0.0, "delta_z": 0.0, "gripper": 1.0, "delta_pitch": 0.0, "delta_yaw": 0.0, "delta_roll": 0.0}
         for val in self.current_pressed:
             action_dict["delta_x"] += val["delta_x"]
             action_dict["delta_y"] += val["delta_y"]
@@ -178,29 +186,33 @@ class MCPEndEffectorTeleop(Teleoperator):
             action_dict["gripper"] = val["gripper"]
             action_dict["delta_pitch"] += val["delta_pitch"]
             action_dict["delta_yaw"] += val["delta_yaw"]
+            action_dict["delta_roll"] += val["delta_roll"]
         self.current_pressed.clear()
         return action_dict
 
 
 
 
-
-    
-
-
 def teleop_loop(
-        teleop: Teleoperator, robot: Robot, fps: int, display_data: bool = False, duration: float | None = None
+        teleop: Teleoperator, robot: Robot, fps: int, display_data: bool = False, duration: float | None = None,
+        on_new_image: Optional[Callable[[], np.ndarray]] = None
 ):
     display_len = max(len(key) for key in robot.action_features)
     start = time.perf_counter()
     while True:
         loop_start = time.perf_counter()
         action = teleop.get_action()
-        if display_data:
+        
+        if on_new_image:
             observation = robot.get_observation()
+            if "gripper" in observation:
+                image = observation["gripper"]
+                on_new_image(image[...,::-1])
+
         try:
             robot.send_action(action)
-        except ...:
+        except Exception as e:
+            print(e)
             pass
         dt_s = time.perf_counter() - loop_start
         busy_wait(1 / fps - dt_s)
@@ -219,7 +231,9 @@ def teleop_loop(
 
 def teleoperate(camera_paths: Dict[str, str],
                 index: int = 0,
-                calibration: Optional[Dict] = None, ):
+                calibration: Optional[Dict] = None, 
+                on_new_image: Optional[Callable[[], np.ndarray]] = None,
+                ):
     port = find_so100_port(index=index)
 
     cameras = dict()
@@ -235,9 +249,9 @@ def teleoperate(camera_paths: Dict[str, str],
         id=f"so100-{index}",
         cameras=cameras,
         end_effector_step_sizes={
-            "x": 0.1,
-            "y": 0.1,
-            "z": 0.1,
+            "x": 0.05,
+            "y": 0.05,
+            "z": 0.05,
         },
         end_effector_bounds={
             "min": [-0.40, -0.50, 0.02],  # X/Y limits over your table # 2 cm above the surface to avoid scraping
@@ -256,9 +270,7 @@ def teleoperate(camera_paths: Dict[str, str],
 
     robot = SO100FPVFollower(config=robot_cfg)
     teleop = MCPEndEffectorTeleop(config=MCPTeleopConfig(), robot=robot)
-    #teleop = KeyboardTeleop(config=KeyboardTeleopConfig(
-    #    calibration_dir=robot_cfg.calibration_dir
-    #))
+
 
     teleop.connect()
     robot.connect(calibrate=False)
@@ -269,7 +281,7 @@ def teleoperate(camera_paths: Dict[str, str],
     )
 
     try:
-        teleop_loop(teleop, robot, cfg.fps, display_data=cfg.display_data, duration=cfg.teleop_time_s)
+        teleop_loop(teleop, robot, cfg.fps, display_data=cfg.display_data, duration=cfg.teleop_time_s, on_new_image=on_new_image)
     except KeyboardInterrupt:
         pass
     finally:
