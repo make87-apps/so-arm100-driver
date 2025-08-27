@@ -126,7 +126,7 @@ def run_teleop():
     manager = make87.peripherals.manager.PeripheralManager(make87_config=config)
     camera_1: CameraPeripheral = manager.get_peripheral_by_name("CAMERA_1")
     zenoh_interface = ZenohInterface(name="zenoh-client", make87_config=config)
-    camera_1_publisher = zenoh_interface.get_publisher(name="CAMERA_1_IMAGE")
+    camera_1_publisher = zenoh_interface.get_publisher(name="IMAGE")
 
     def on_new_image(img: np.ndarray):
         try:
@@ -146,8 +146,7 @@ def run_teleop():
 
 
 if __name__ == "__main__":
-    run_teleop()
-    #if os.environ.get("TELEOP", None) is None:
-    #    run_policy_controlled()
-    #else:
-    #    run_teleop()
+    if os.environ.get("TELEOP", None) is None:
+        run_policy_controlled()
+    else:
+        run_teleop()
