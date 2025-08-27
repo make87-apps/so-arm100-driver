@@ -137,9 +137,9 @@ dev_build:
       ide: vscode_server_py3
       ssh: ssh_server
 
-    peripheral_requirements:
-      - peripheral_type: Camera
-        name: CAMERA_1
+peripheral_requirements:
+  - peripheral_type: Camera
+    name: CAMERA_1
 variants:
   mcp_control:
     contianer_config:
