@@ -18,24 +18,11 @@ class SO100FPVFollower(SO100FollowerEndEffector):
         sx, sy, sz = step.get("x", 1.0), step.get("y", 1.0), step.get("z", 1.0)
         sp, syaw, sr = step.get("pitch", 0.5), step.get("yaw", 0.5), step.get("roll", 0.5)  # deg per unit
 
-        # Parse linear deltas (local/gripper frame) UFL coords
-        if not all(k in action for k in ("delta_x", "delta_y", "delta_z")):
-            logger.warning(f"Missing one of delta_x/y/z; zeroing translation. Got keys: {list(action.keys())}")
-            delta_local = np.zeros(3, dtype=np.float32)
-        else:
-            # we get FLU and this seems to be DLB
-            # Back, Left, Down
-            delta_local = np.array(
-                [-1 * action["delta_z"] * sx, 
-                action["delta_y"] * sy, 
-                -1 * action["delta_x"] * sz],
-                dtype=np.float32,
-            )
 
         # Parse angular deltas (local yaw then local pitch)
         delta_pitch = float(action.get("delta_pitch", 0.0)) * sp * -1
         delta_roll = float(action.get("delta_roll", 0.0)) * sr
-        delta_yaw   = float(action.get("delta_yaw", 0.0))   * syaw
+        delta_yaw   = float(action.get("delta_yaw", 0.0)) * syaw
 
         # Gripper: accept scalar or array
         grip_raw = action.get("gripper", 1.0)
@@ -53,10 +40,18 @@ class SO100FPVFollower(SO100FollowerEndEffector):
             self.current_ee_pos = self.kinematics.forward_kinematics(self.current_joint_pos)
 
 
-        grip_delta = np.eye(4)
-        grip_delta[:3, 3] = delta_local
-        grip_delta[:3, :3] = _rot_x(delta_yaw) @ _rot_y(delta_pitch) @ _rot_z(delta_roll)
-        desired_ee = np.eye(4, dtype=np.float32)
+        #grip_delta = np.eye(4)
+        #grip_delta[:3, 3] = delta_local
+        #grip_delta[:3, :3] = _rot_x(delta_yaw) @ _rot_y(delta_pitch) @ _rot_z(delta_roll)
+        #desired_ee = np.eye(4, dtype=np.float32)
+        #desired_ee = self.current_ee_pos @ grip_delta
+
+        R = _rot_z(delta_yaw) @ _rot_y(delta_pitch) @ _rot_x(delta_roll)
+        grip_delta = np.eye(4, dtype=np.float32)
+        grip_delta[:3, 3] = np.array([-action["delta_z"]*sx, action["delta_y"]*sy, -action["delta_x"]*sz], dtype=np.float32)
+        if self.end_effector_bounds is not None:
+            grip_delta[:3, 3] = np.clip(grip_delta[:3, 3], self.end_effector_bounds["min"], self.end_effector_bounds["max"])
+        grip_delta[:3, :3] = R
         desired_ee = self.current_ee_pos @ grip_delta
 
         if self.end_effector_bounds is not None:

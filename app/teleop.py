@@ -204,10 +204,14 @@ def teleop_loop(
         action = teleop.get_action()
         
         if on_new_image:
-            observation = robot.get_observation()
-            if "gripper" in observation:
-                image = observation["gripper"]
-                on_new_image(image[...,::-1])
+            try:
+                observation = robot.get_observation()
+                if "gripper" in observation:
+                    image = observation["gripper"]
+                    on_new_image(image[...,::-1])
+            except Exception as e:
+                print(e)
+                pass
 
         try:
             robot.send_action(action)
