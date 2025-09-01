@@ -40,19 +40,19 @@ class SO100FPVFollower(SO100FollowerEndEffector):
             self.current_ee_pos = self.kinematics.forward_kinematics(self.current_joint_pos)
 
 
-        #grip_delta = np.eye(4)
-        #grip_delta[:3, 3] = delta_local
-        #grip_delta[:3, :3] = _rot_x(delta_yaw) @ _rot_y(delta_pitch) @ _rot_z(delta_roll)
-        #desired_ee = np.eye(4, dtype=np.float32)
-        #desired_ee = self.current_ee_pos @ grip_delta
-
-        R = _rot_z(delta_yaw) @ _rot_y(delta_pitch) @ _rot_x(delta_roll)
-        grip_delta = np.eye(4, dtype=np.float32)
+        grip_delta = np.eye(4)
         grip_delta[:3, 3] = np.array([-action["delta_z"]*sx, action["delta_y"]*sy, -action["delta_x"]*sz], dtype=np.float32)
-        if self.end_effector_bounds is not None:
-            grip_delta[:3, 3] = np.clip(grip_delta[:3, 3], self.end_effector_bounds["min"], self.end_effector_bounds["max"])
-        grip_delta[:3, :3] = R
+        grip_delta[:3, :3] = _rot_x(delta_yaw) @ _rot_y(delta_pitch) @ _rot_z(delta_roll)
+        desired_ee = np.eye(4, dtype=np.float32)
         desired_ee = self.current_ee_pos @ grip_delta
+
+        #R = _rot_z(delta_yaw) @ _rot_y(delta_pitch) @ _rot_x(delta_roll)
+        #grip_delta = np.eye(4, dtype=np.float32)
+        #grip_delta[:3, 3] = np.array([-action["delta_z"]*sx, action["delta_y"]*sy, -action["delta_x"]*sz], dtype=np.float32)
+        #if self.end_effector_bounds is not None:
+        #    grip_delta[:3, 3] = np.clip(grip_delta[:3, 3], self.end_effector_bounds["min"], self.end_effector_bounds["max"])
+        #grip_delta[:3, :3] = R
+        #desired_ee = self.current_ee_pos @ grip_delta
 
         if self.end_effector_bounds is not None:
             grip_delta[:3, 3] = np.clip(grip_delta[:3, 3], self.end_effector_bounds["min"], self.end_effector_bounds["max"])
