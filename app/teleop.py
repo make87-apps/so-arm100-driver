@@ -71,23 +71,33 @@ class MCPEndEffectorTeleop(Teleoperator):
         self.last_delta = None
         self.random_move_time = time.time()
 
-        @server.tool(description="Move the arm by setting the deltas. Values are in [-1, 1]. delta_pitch and delta_yaw and delta_roll are in degrees.")
-        def move_arm_vector(delta_forward: float, delta_left: float, delta_up: float, gripper: float, delta_pitch: float = 0.0, delta_yaw: float = 0.0, delta_roll: float = 0.0) -> str:
-            #self.delta_queue.put((delta_forward, delta_left, delta_up, gripper + 1))  # gripper in [0, 2]
+        @server.tool(description="Move the arm by setting the deltas. Values are in [-1, 1].")
+        def move_arm_vector(
+            delta_forward: float = 0.0,
+            delta_left: float = 0.0,
+            delta_up: float = 0.0,
+            gripper: float = 0.0,
+            delta_pitch: float = 0.0,
+            delta_yaw: float = 0.0,
+            delta_roll: float = 0.0,
+        ) -> str:
+            if all(v == 0.0 for v in [delta_forward, delta_left, delta_up, gripper, delta_pitch, delta_yaw, delta_roll]):
+                return "No values passed, nothing happened."
+
             self.delta_queue.put(
                 {
-                    "delta_x": delta_forward, 
-                    "delta_y": delta_left, 
-                    "delta_z": delta_up, 
-                    "gripper": gripper,
-                    "delta_pitch": delta_pitch,
-                    "delta_yaw": delta_yaw,
-                    "delta_roll": delta_roll
+                    "delta_x": delta_forward,
+                    "delta_y": delta_left,
+                    "delta_z": delta_up,
+                    "gripper": gripper + 1,  # gripper in [0, 2]
+                    "delta_pitch": delta_pitch * 90,
+                    "delta_yaw": delta_yaw * 90,
+                    "delta_roll": delta_roll * 90,
                 }
             )
             time.sleep(1)
 
-            return "Move arm command succelfully sent"
+            return "Move arm command successfully sent"
 
 
         @server.tool(description="Get the current image from the robot's gripper camera as jpeg bytes.")
