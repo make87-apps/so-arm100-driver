@@ -8,6 +8,7 @@ from make87.interfaces.rerun import init_and_connect_grpc
 from make87.peripherals import CameraPeripheral
 from make87_messages.image.compressed.image_jpeg_pb2 import ImageJPEG
 import cv2
+import zenoh
 import numpy as np
 
 logger = logging.getLogger(__name__)
@@ -117,33 +118,60 @@ def run_policy_controlled():
     )
 
 
+class ImageChangePublisher:
+    def __init__(self, image_change_threshold: float, only_publish_image_on_change: bool, publisher: zenoh.Publisher):
+        self._last_image = None
+        self.only_publish_image_on_change = only_publish_image_on_change
+        self.image_change_threshold = image_change_threshold
+        self.publisher = publisher
+
+    def on_new_image(self, img: np.ndarray):
+        
+
+        try:
+            if self.only_publish_image_on_change and self._last_image is not None:
+                from app.robot_logging import frame_changed
+                changed = frame_changed(current=img, last=self._last_image, threshold=self.image_change_threshold)
+                if not changed:
+                    return
+
+            self._last_image = img
+
+            ret, jpeg = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 95])
+            msg = ImageJPEG(data=jpeg.tobytes())
+            message_encoded = m87.encodings.ProtobufEncoder(message_type=ImageJPEG).encode(msg)
+            self.publisher.put(message_encoded)
+        except Exception as e:
+            logger.error(f"Error sending image: {e}")
+            return 
+
 def run_teleop():
     from app.teleop import teleoperate
+
     config = make87.config.load_config_from_env()
 
     init_and_connect_grpc(interface_name="rerun", client_name="so-100arm")
     robot_index = make87.config.get_config_value(config, "robot_index", default=0, converter=int)
     calibration = make87.config.get_config_value(config, "calibration")
+    image_change_threshold = make87.config.get_config_value(config, "image_change_threshold", converter=float, default=0.05)
+    only_publish_image_on_change = make87.config.get_config_value(config, "only_publish_image_on_change", default=True, converter=bool)
+    
 
     manager = make87.peripherals.manager.PeripheralManager(make87_config=config)
     camera_1: CameraPeripheral = manager.get_peripheral_by_name("CAMERA_1")
     zenoh_interface = ZenohInterface(name="zenoh-client", make87_config=config)
     camera_1_publisher = zenoh_interface.get_publisher(name="IMAGE")
 
-    def on_new_image(img: np.ndarray):
-        try:
-            ret, jpeg = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 95])
-            msg = ImageJPEG(data=jpeg.tobytes())
-            message_encoded = m87.encodings.ProtobufEncoder(message_type=ImageJPEG).encode(msg)
-            camera_1_publisher.put(message_encoded)
-        except Exception as e:
-            logger.error(f"Error sending image: {e}")
-            return
+    change_publisher = ImageChangePublisher(
+        image_change_threshold=image_change_threshold,
+        only_publish_image_on_change=only_publish_image_on_change,
+        publisher=camera_1_publisher
+    )
 
     teleoperate(camera_paths={"gripper": camera_1.reference},
                 index=robot_index,
                 calibration=calibration,
-                on_new_image=on_new_image)
+                on_new_image=change_publisher.on_new_image)
 
 
 if __name__ == "__main__":

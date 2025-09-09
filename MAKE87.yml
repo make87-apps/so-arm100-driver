@@ -11,6 +11,14 @@ container_config:
 config:
   type: object
   properties:
+    only_publish_image_on_change:
+      type: boolean
+      default: true
+      description: if the publisher should publish an image if if the content did not change
+    image_change_threshold:
+      type: number
+      default: 0.05
+      description: the percentage threshold for change to be counted as changed image
     robot_index:
       type: integer
       default: 0
