@@ -91,7 +91,6 @@ class SO100FPVFollower(SO100FollowerEndEffector):
             image = observation["gripper"]
             joint_positions={k.replace(".pos", ""): math.radians(v) for k, v in observation.items() if k != "gripper"}
             self.visualizer.update_joint_positions(joint_positions)
-            self.visualizer.log_joint_states(joint_positions)
             self.visualizer.log_camera_at_gripper(image)
             self.last_log_time = time.time()
         return observation
