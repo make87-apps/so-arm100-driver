@@ -175,7 +175,6 @@ def run_teleop():
 
 
 if __name__ == "__main__":
-    run_teleop()
     if os.environ.get("TELEOP", None) is None:
         run_policy_controlled()
     else:
