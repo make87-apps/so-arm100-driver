@@ -29,7 +29,8 @@ RUN set -eux; \
       echo "No pip.conf found, using default indexes"; \
     fi; \
     ${VIRTUAL_ENV}/bin/python3 -m pip install ".[mcp_control]" \
-    && ${VIRTUAL_ENV}/bin/python3 -m pip uninstall torchvision torchaudio torchcodec diffusers -y
+    && ${VIRTUAL_ENV}/bin/python3 -m pip uninstall torchvision torchaudio torchcodec diffusers rerun-sdk -y  \
+    && ${VIRTUAL_ENV}/bin/python3 -m pip install "rerun-sdk==0.24.1" -y 
 
 FROM ghcr.io/make87/python3-debian12:latest
 

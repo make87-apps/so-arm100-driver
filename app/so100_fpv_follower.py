@@ -1,14 +1,21 @@
 import logging
 from typing import Any, Callable
-
+import time
+import math
 import numpy as np
 from lerobot.errors import DeviceNotConnectedError
-from lerobot.robots.so100_follower import SO100FollowerEndEffector, SO100Follower
+from lerobot.robots.so100_follower import SO100FollowerEndEffector, SO100FollowerEndEffectorConfig
+from app.robot_logging import SO101Visualizer
 
 
 logger = logging.getLogger(__name__)
 
 class SO100FPVFollower(SO100FollowerEndEffector):
+    def __init__(self, config: SO100FollowerEndEffectorConfig):
+        super().__init__(config=config)
+        self.visualizer = SO101Visualizer(urdf_path=config.urdf_path)
+        self.last_log_time = time.time()
+
 
     def send_action(self, action: dict[str, Any]) -> dict[str, Any]:
         if not self.is_connected:
@@ -41,7 +48,7 @@ class SO100FPVFollower(SO100FollowerEndEffector):
 
 
         grip_delta = np.eye(4)
-        grip_delta[:3, 3] = np.array([-action["delta_z"]*sx, action["delta_y"]*sy, -action["delta_x"]*sz], dtype=np.float32)
+        grip_delta[:3, 3] = np.array([-action["delta_z"]*sx, action["delta_y"]*sy, action["delta_x"]*sz], dtype=np.float32)
         grip_delta[:3, :3] = _rot_x(delta_yaw) @ _rot_y(delta_pitch) @ _rot_z(delta_roll)
         desired_ee = np.eye(4, dtype=np.float32)
         desired_ee = self.current_ee_pos @ grip_delta
@@ -77,6 +84,17 @@ class SO100FPVFollower(SO100FollowerEndEffector):
         self.current_joint_pos[-1] = joint_action["gripper.pos"]
 
         return super(SO100FollowerEndEffector, self).send_action(joint_action)
+
+    def get_observation(self) -> dict[str, Any]:
+        observation = super().get_observation()
+        if "gripper" in observation and time.time() - self.last_log_time > 1.0:
+            image = observation["gripper"]
+            joint_positions={k.replace(".pos", ""): math.radians(v) for k, v in observation.items() if k != "gripper"}
+            self.visualizer.update_joint_positions(joint_positions)
+            self.visualizer.log_joint_states(joint_positions)
+            self.visualizer.log_camera_at_gripper(image)
+            self.last_log_time = time.time()
+        return observation
 
 def _rot_y(pitch: float) -> np.ndarray:
     pitch = np.deg2rad(pitch)

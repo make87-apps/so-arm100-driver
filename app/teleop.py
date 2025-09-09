@@ -71,24 +71,67 @@ class MCPEndEffectorTeleop(Teleoperator):
         self.last_delta = None
         self.random_move_time = time.time()
 
-        @server.tool(description="Move the arm by setting the deltas. Values are in [-1, 1].")
+        @server.tool(
+            description=(
+                "Move the robotic arm using normalized delta values in the range [-1, 1].\n\n"
+                "Translation parameters:\n"
+                "- delta_forward > 0 moves forward.\n"
+                "- delta_backward > 0 moves backward.\n"
+                "- delta_left > 0 moves left.\n"
+                "- delta_right > 0 moves right.\n"
+                "- delta_up > 0 moves up.\n"
+                "- delta_down > 0 moves down.\n\n"
+                "Rotation parameters (end effector position stays the same, only orientation changes):\n"
+                "- rotate_left > 0 rotates left (yaw).\n"
+                "- rotate_right > 0 rotates right (yaw).\n"
+                "- rotate_up > 0 tilts upward (pitch).\n"
+                "- rotate_down > 0 tilts downward (pitch).\n"
+                "- roll_left > 0 rolls counter-clockwise.\n"
+                "- roll_right > 0 rolls clockwise.\n\n"
+                "Gripper parameter:\n"
+                "- gripper ∈ [-1, 1], -1 to close it and 1 to open it!\n\n"
+                "Examples:\n"
+                "- To move right, set delta_right=0.5.\n"
+                "- To rotate the wrist 90° to the right in place, set rotate_right=1.0.\n"
+                "- To tilt the gripper upward without moving, set rotate_up=1.0.\n"
+                "- To roll the camera clockwise, set roll_right=1.0.\n\n"
+                "If all parameters are 0.0, nothing happens."
+            )
+        )
         def move_arm_vector(
+            # translations
             delta_forward: float = 0.0,
+            delta_backward: float = 0.0,
             delta_left: float = 0.0,
+            delta_right: float = 0.0,
             delta_up: float = 0.0,
+            delta_down: float = 0.0,
+            # gripper
             gripper: float = 0.0,
-            delta_pitch: float = 0.0,
-            delta_yaw: float = 0.0,
-            delta_roll: float = 0.0,
+            # rotations
+            rotate_up: float = 0.0,
+            rotate_down: float = 0.0,
+            rotate_left: float = 0.0,
+            rotate_right: float = 0.0,
+            roll_left: float = 0.0,
+            roll_right: float = 0.0,
         ) -> str:
-            if all(v == 0.0 for v in [delta_forward, delta_left, delta_up, gripper, delta_pitch, delta_yaw, delta_roll]):
+            # normalize to internal deltas
+            delta_x = delta_forward - delta_backward
+            delta_y = delta_left - delta_right
+            delta_z = delta_up - delta_down
+            delta_pitch = rotate_up - rotate_down
+            delta_yaw = rotate_right - rotate_left
+            delta_roll = roll_right - roll_left
+
+            if all(v == 0.0 for v in [delta_x, delta_y, delta_z, gripper, delta_pitch, delta_yaw, delta_roll]):
                 return "No values passed, nothing happened."
 
             self.delta_queue.put(
                 {
-                    "delta_x": delta_forward,
-                    "delta_y": delta_left,
-                    "delta_z": delta_up,
+                    "delta_x": delta_x,
+                    "delta_y": delta_y,
+                    "delta_z": delta_z,
                     "gripper": gripper + 1,  # gripper in [0, 2]
                     "delta_pitch": delta_pitch * 90,
                     "delta_yaw": delta_yaw * 90,
@@ -100,15 +143,15 @@ class MCPEndEffectorTeleop(Teleoperator):
             return "Move arm command successfully sent"
 
 
-        @server.tool(description="Get the current image from the robot's gripper camera as jpeg bytes.")
-        def get_gripper_image() -> Image:
-            observation = self.robot.get_observation()
-            if "gripper" in observation:
-                image = observation["gripper"]
-                jpegimg = cv2.imencode(".jpg", image[...,::-1])[1].tobytes()
-            else:
-                jpegimg = b""
-            return Image(data=jpegimg, format="jpeg")
+        #@server.tool(description="Get the current image from the robot's gripper camera as jpeg bytes.")
+        #def get_gripper_image() -> Image:
+        #    observation = self.robot.get_observation()
+        #    if "gripper" in observation:
+        #        image = observation["gripper"]
+        #        jpegimg = cv2.imencode(".jpg", image[...,::-1])[1].tobytes()
+        #    else:
+        #        jpegimg = b""
+        #    return Image(data=jpegimg, format="jpeg")
 
 
     @property

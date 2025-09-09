@@ -4,6 +4,7 @@ import os
 import make87
 import make87 as m87
 from make87.interfaces.zenoh import ZenohInterface
+from make87.interfaces.rerun import init_and_connect_grpc
 from make87.peripherals import CameraPeripheral
 from make87_messages.image.compressed.image_jpeg_pb2 import ImageJPEG
 import cv2
@@ -120,6 +121,7 @@ def run_teleop():
     from app.teleop import teleoperate
     config = make87.config.load_config_from_env()
 
+    init_and_connect_grpc(interface_name="rerun", client_name="so-100arm")
     robot_index = make87.config.get_config_value(config, "robot_index", default=0, converter=int)
     calibration = make87.config.get_config_value(config, "calibration")
 
@@ -144,8 +146,8 @@ def run_teleop():
                 on_new_image=on_new_image)
 
 
-
 if __name__ == "__main__":
+    run_teleop()
     if os.environ.get("TELEOP", None) is None:
         run_policy_controlled()
     else:
