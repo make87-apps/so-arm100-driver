@@ -89,7 +89,8 @@ class MCPEndEffectorTeleop(Teleoperator):
                 "- roll_left > 0 rolls counter-clockwise.\n"
                 "- roll_right > 0 rolls clockwise.\n\n"
                 "Gripper parameter:\n"
-                "- gripper ∈ [-1, 1], -1 to close it and 1 to open it!\n\n"
+                "- gripper_open ∈ [0, 1], 1 to open it!\n"
+                "- gripper_close ∈ [0, 1], 1 to close it!\n\n"
                 "Examples:\n"
                 "- To move right, set delta_right=0.5.\n"
                 "- To rotate the wrist 90° to the right in place, set rotate_right=1.0.\n"
@@ -107,7 +108,8 @@ class MCPEndEffectorTeleop(Teleoperator):
             delta_up: float = 0.0,
             delta_down: float = 0.0,
             # gripper
-            gripper: float = 0.0,
+            gripper_open: float = 0.0,
+            gripper_close: float = 0.0,
             # rotations
             rotate_up: float = 0.0,
             rotate_down: float = 0.0,
@@ -123,6 +125,7 @@ class MCPEndEffectorTeleop(Teleoperator):
             delta_pitch = rotate_up - rotate_down
             delta_yaw = rotate_right - rotate_left
             delta_roll = roll_right - roll_left
+            gripper = gripper_open - gripper_close
 
             if all(v == 0.0 for v in [delta_x, delta_y, delta_z, gripper, delta_pitch, delta_yaw, delta_roll]):
                 return "No values passed, nothing happened."
